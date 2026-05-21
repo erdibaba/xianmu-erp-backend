@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.renren.modules.erp.dao.ErpInventoryDao">
+
+  <select id="querySummary" resultType="io.renren.modules.erp.vo.ErpInventorySummaryVo">
+    SELECT
+      l.product_id AS productId,
+      l.product_code AS productCode,
+      l.product_name AS productName,
+      l.product_spec AS productSpec,
+      MAX(COALESCE(i.batch_no, '')) AS batchNo,
+      l.warehouse_name AS warehouseName,
+      MIN(l.biz_date) AS earliestBizDate,
+      MIN(l.expiry_date) AS nearestExpiryDate,
+      SUM(l.in_pieces) AS totalInPieces,
+      SUM(l.out_pieces) AS totalOutPieces,
+      SUM(l.in_pieces - l.out_pieces) AS stockPieces,
+      SUM(l.in_quantity) AS totalInQuantity,
+      SUM(l.out_quantity) AS totalOutQuantity,
+      SUM(l.in_quantity - l.out_quantity) AS stockQuantity,
+      MAX(l.unit_price) AS lastUnitPrice,
+      MAX(COALESCE(p.safe_stock_boxes, 0)) AS safeStockBoxes,
+      MAX(COALESCE(p.freshness_warning_days, 0)) AS freshnessWarningDays,
+      CASE WHEN SUM(l.in_pieces - l.out_pieces) &lt;= MAX(COALESCE(p.safe_stock_boxes, 0)) THEN 1 ELSE 0 END AS safetyWarning,
+      CASE WHEN MIN(l.expiry_date) IS NOT NULL AND DATEDIFF(MIN(l.expiry_date), CURDATE()) &lt;= MAX(COALESCE(p.freshness_warning_days, 0)) THEN 1 ELSE 0 END AS freshnessWarning
+    FROM erp_stock_ledger l
+    LEFT JOIN erp_product p ON p.id = l.product_id
+    LEFT JOIN erp_trade_order_item i ON i.id = l.order_item_id
+    WHERE 1 = 1
+    <if test="productName != null and productName != ''">
+      AND l.product_name LIKE CONCAT('%', #{productName}, '%')
+    </if>
+    <if test="warehouseName != null and warehouseName != ''">
+      AND l.warehouse_name LIKE CONCAT('%', #{warehouseName}, '%')
+    </if>
+    GROUP BY l.product_id, l.product_code, l.product_name, l.product_spec, l.warehouse_name
+    ORDER BY safetyWarning DESC, freshnessWarning DESC, l.product_name ASC, l.warehouse_name ASC
+  </select>
+
+</mapper>

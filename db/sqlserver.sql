@@ -173,6 +173,11 @@ INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num
 INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (27, 1, '参数管理', 'sys/config', 'sys:config:list,sys:config:info,sys:config:save,sys:config:update,sys:config:delete', 1, 'config', 6);
 INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (29, 1, '系统日志', 'sys/log', 'sys:log:list', 1, 'log', 7);
 INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (30, 1, '文件上传', 'oss/oss', 'sys:oss:all', 1, 'oss', 6);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (31, 1, '数据导入', 'generator/dataimport', NULL, 1, 'config', 8);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (32, 31, '查看', NULL, 'generator:dataimport:list,generator:dataimport:info', 2, NULL, 0);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (33, 31, '导入', NULL, 'generator:dataimport:save', 2, NULL, 1);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (34, 31, '修改', NULL, 'generator:dataimport:update', 2, NULL, 2);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (35, 31, '删除', NULL, 'generator:dataimport:delete', 2, NULL, 3);
 
 SET IDENTITY_INSERT sys_menu OFF;
 

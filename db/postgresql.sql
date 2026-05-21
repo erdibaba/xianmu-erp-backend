@@ -175,6 +175,11 @@ INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num
 INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (27, 1, '参数管理', 'sys/config', 'sys:config:list,sys:config:info,sys:config:save,sys:config:update,sys:config:delete', 1, 'config', 6);
 INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (29, 1, '系统日志', 'sys/log', 'sys:log:list', 1, 'log', 7);
 INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (30, 1, '文件上传', 'oss/oss', 'sys:oss:all', 1, 'oss', 6);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (31, 1, '数据导入', 'generator/dataimport', NULL, 1, 'config', 8);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (32, 31, '查看', NULL, 'generator:dataimport:list,generator:dataimport:info', 2, NULL, 0);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (33, 31, '导入', NULL, 'generator:dataimport:save', 2, NULL, 1);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (34, 31, '修改', NULL, 'generator:dataimport:update', 2, NULL, 2);
+INSERT INTO sys_menu(menu_id, parent_id, name, url, perms, type, icon, order_num) VALUES (35, 31, '删除', NULL, 'generator:dataimport:delete', 2, NULL, 3);
 
 
 INSERT INTO sys_config (param_key, param_value, status, remark) VALUES ('CLOUD_STORAGE_CONFIG_KEY',  '{"aliyunAccessKeyId":"","aliyunAccessKeySecret":"","aliyunBucketName":"","aliyunDomain":"","aliyunEndPoint":"","aliyunPrefix":"","qcloudBucketName":"","qcloudDomain":"","qcloudPrefix":"","qcloudSecretId":"","qcloudSecretKey":"","qiniuAccessKey":"NrgMfABZxWLo5B-YYSjoE8-AZ1EISdi1Z3ubLOeZ","qiniuBucketName":"ios-app","qiniuDomain":"http://7xlij2.com1.z0.glb.clouddn.com","qiniuPrefix":"upload","qiniuSecretKey":"uIwJHevMRWU0VLxFvgy0tAcOdGqasdtVlJkdy6vV","type":1}', '0', '云存储配置信息');
@@ -186,7 +191,7 @@ INSERT INTO schedule_job (bean_name, params, cron_expression, status, remark, cr
 INSERT INTO tb_user (username, mobile, password, create_time) VALUES ('mark', '13612345678', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', '2017-03-23 22:37:41');
 
 
-alter sequence sys_menu_menu_id_seq restart with 31;
+alter sequence sys_menu_menu_id_seq restart with 36;
 alter sequence sys_user_user_id_seq restart with 2;
 
 

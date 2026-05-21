@@ -1,0 +1,61 @@
+package io.renren.modules.erp.entity;
+
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import java.io.Serializable;
+import java.util.Date;
+import java.util.List;
+import lombok.Data;
+
+@Data
+@TableName("erp_presale_order")
+public class ErpPresaleOrderEntity implements Serializable {
+  private static final long serialVersionUID = 1L;
+
+  @TableId
+  private Long id;
+  private String orderNo;
+  private String sellerContractNo;
+  private String customerReference;
+  private Long brandId;
+  private String brandName;
+  private String estimateFilePath;
+  private String estimateFileName;
+  private String estimateRawText;
+  private String currency;
+  private Date orderDate;
+  private Date expectedDate;
+  private Integer status;
+  private String remark;
+  private Long createUserId;
+  private Date createTime;
+  private Date updateTime;
+
+  @TableField(exist = false)
+  private List<ErpPresaleOrderItemEntity> itemList;
+
+  @TableField(exist = false)
+  private ErpPresaleConfirmEntity confirmInfo;
+
+  @TableField(exist = false)
+  private ErpPresalePackingEntity packingInfo;
+
+  @TableField(exist = false)
+  private Integer confirmUploaded;
+
+  @TableField(exist = false)
+  private Integer packingUploaded;
+
+  @TableField(exist = false)
+  private ErpPresaleAttachmentEntity customsInfo;
+
+  @TableField(exist = false)
+  private ErpPresaleAttachmentEntity quarantineInfo;
+
+  @TableField(exist = false)
+  private Integer customsUploaded;
+
+  @TableField(exist = false)
+  private Integer quarantineUploaded;
+}

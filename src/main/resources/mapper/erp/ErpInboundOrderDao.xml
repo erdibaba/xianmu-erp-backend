@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.renren.modules.erp.dao.ErpInboundOrderDao">
+
+  <select id="queryReadyPresaleList" resultType="io.renren.modules.erp.vo.ErpInboundListVo">
+    SELECT
+      io.id AS id,
+      p.id AS presaleOrderId,
+      p.brand_id AS brandId,
+      p.brand_name AS brandName,
+      COALESCE(io.contract_no, pc.contract_no, p.seller_contract_no) AS contractNo,
+      COALESCE(io.customer_name, p.customer_reference) AS customerName,
+      io.warehouse_id AS warehouseId,
+      io.warehouse_name AS warehouseName,
+      COALESCE(io.order_date, p.order_date) AS orderDate,
+      COALESCE(io.expected_arrival_date, pc.expected_arrival_date, p.expected_date) AS expectedArrivalDate,
+      CASE WHEN io.id IS NULL THEN 0 ELSE 1 END AS uploadStatus
+    FROM erp_presale_order p
+    INNER JOIN erp_presale_confirm pc ON pc.presale_order_id = p.id
+    INNER JOIN erp_presale_packing pp ON pp.presale_order_id = p.id
+    INNER JOIN erp_presale_attachment ac ON ac.presale_order_id = p.id AND ac.attachment_type = 'CUSTOMS'
+    INNER JOIN erp_presale_attachment aq ON aq.presale_order_id = p.id AND aq.attachment_type = 'QUARANTINE'
+    LEFT JOIN erp_inbound_order io ON io.presale_order_id = p.id
+    WHERE 1 = 1
+    <if test="keyword != null and keyword != ''">
+      AND (
+        p.seller_contract_no LIKE CONCAT('%', #{keyword}, '%')
+        OR p.customer_reference LIKE CONCAT('%', #{keyword}, '%')
+        OR p.brand_name LIKE CONCAT('%', #{keyword}, '%')
+        OR pc.contract_no LIKE CONCAT('%', #{keyword}, '%')
+      )
+    </if>
+    ORDER BY COALESCE(io.update_time, p.update_time) DESC, p.id DESC
+  </select>
+
+</mapper>

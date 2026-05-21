@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="io.renren.modules.data.dao.DataImportDao">
+
+	<!-- 可根据自己的需求，是否要使用 -->
+    <resultMap type="io.renren.modules.data.entity.DataImportEntity" id="dataImportMap">
+        <result property="id" column="id"/>
+        <result property="item" column="item"/>
+        <result property="channel" column="channel"/>
+        <result property="retailer" column="retailer"/>
+        <result property="storeCodeCustomer" column="store_code_customer"/>
+        <result property="storeCodeSff" column="store_code_sff"/>
+        <result property="subChannel" column="sub_channel"/>
+        <result property="storeName" column="store_name"/>
+        <result property="chainStoreOrNot" column="chain_store_or_not"/>
+        <result property="customer" column="customer"/>
+        <result property="province" column="province"/>
+        <result property="cityTier" column="city_tier"/>
+        <result property="strongHold" column="strong_hold"/>
+        <result property="battleField" column="battle_field"/>
+        <result property="greenSpace" column="green_space"/>
+        <result property="city1" column="city1"/>
+        <result property="city2" column="city2"/>
+        <result property="location" column="location"/>
+        <result property="distributeFromWhichDc" column="distribute_from_which_dc"/>
+        <result property="customerRegion" column="customer_region"/>
+        <result property="storeStatus" column="store_status"/>
+        <result property="active" column="active"/>
+        <result property="inactive" column="inactive"/>
+        <result property="attrited" column="attrited"/>
+        <result property="closed" column="closed"/>
+        <result property="storeClassification" column="store_classification"/>
+        <result property="f" column="f"/>
+        <result property="a" column="a"/>
+        <result property="b" column="b"/>
+        <result property="c" column="c"/>
+        <result property="d" column="d"/>
+        <result property="display" column="display"/>
+        <result property="cooler" column="cooler"/>
+        <result property="frozenArea" column="frozen_area"/>
+        <result property="posm" column="posm"/>
+        <result property="salesPromoter" column="sales_promoter"/>
+        <result property="tasting" column="tasting"/>
+        <result property="kam" column="kam"/>
+        <result property="productBrand" column="product_brand"/>
+        <result property="firstParty" column="first_party"/>
+        <result property="coBrand" column="co_brand"/>
+        <result property="customerBrand" column="customer_brand"/>
+        <result property="productCategories" column="product_categories"/>
+        <result property="frozenBeef" column="frozen_beef"/>
+        <result property="chilledPs" column="chilled_ps"/>
+        <result property="syb" column="syb"/>
+        <result property="frozenLamb" column="frozen_lamb"/>
+        <result property="chilledLamb" column="chilled_lamb"/>
+        <result property="venison" column="venison"/>
+        <result property="angus" column="angus"/>
+        <result property="reserve" column="reserve"/>
+        <result property="productPackage" column="product_package"/>
+        <result property="entry" column="entry"/>
+        <result property="uprise" column="uprise"/>
+        <result property="scale" column="scale"/>
+        <result property="giftPack" column="gift_pack"/>
+        <result property="noOfSku" column="no_of_sku"/>
+        <result property="customerSkuDescription" column="customer_sku_description"/>
+        <result property="skuDescription" column="sku_description"/>
+        <result property="beefCube500g" column="beef_cube_500g"/>
+        <result property="beefHotpotRoll200g" column="beef_hotpot_roll_200g"/>
+        <result property="beefMince500g" column="beef_mince_500g"/>
+        <result property="beefShankMeat1000g" column="beef_shank_meat_1000g"/>
+        <result property="beefTail500g" column="beef_tail_500g"/>
+        <result property="lambCubeBoneIn500g" column="lamb_cube_bone_in_500g"/>
+        <result property="lambFrenchRack200g" column="lamb_french_rack_200g"/>
+        <result property="lambLegSteak1000g" column="lamb_leg_steak_1000g"/>
+        <result property="nebInStoreWeighing" column="neb_in_store_weighing"/>
+        <result property="psBeefFlatInStoreWeighing" column="ps_beef_flat_in_store_weighing"/>
+        <result property="ribEyeSteak150g" column="rib_eye_steak_150g"/>
+        <result property="ribEyeSteak500g" column="rib_eye_steak_500g"/>
+        <result property="striploinSteak150g" column="striploin_steak_150g"/>
+        <result property="striploinSteak500g" column="striploin_steak_500g"/>
+        <result property="venisonFlapCubes1000g" column="venison_flap_cubes_1000g"/>
+        <result property="venisonFlapCubes400g" column="venison_flap_cubes_400g"/>
+        <result property="venisonShankMeat800g" column="venison_shank_meat_800g"/>
+        <result property="venisonFrenchRacks1000g" column="venison_french_racks_1000g"/>
+        <result property="venisonFrenchRacks450g" column="venison_french_racks_450g"/>
+        <result property="venisonRibs500g" column="venison_ribs_500g"/>
+        <result property="venisonShank800g" column="venison_shank_800g"/>
+        <result property="venisonStriploin150g" column="venison_striploin_150g"/>
+        <result property="chilledLambFrRackWeighting" column="chilled_lamb_fr_Rack_weighting"/>
+        <result property="venisonGiftBox" column="venison_gift_box"/>
+        <result property="lambCcs" column="lamb_ccs"/>
+        <result property="date" column="date"/>
+        <result property="year" column="year"/>
+        <result property="month" column="month"/>
+        <result property="day" column="day"/>
+        <result property="salesValue" column="sales_value"/>
+        <result property="salesWeight" column="sales_weight"/>
+        <result property="salesQty" column="sales_qty"/>
+        <result property="packSize" column="pack_size"/>
+        <result property="claimRate" column="claim_rate"/>
+        <result property="createUserId" column="create_user_id"/>
+        <result property="createTime" column="create_time"/>
+        <result property="status" column="status"/>
+    </resultMap>
+
+    <insert id="insertBatch">
+        INSERT INTO `data_import`( `item`, `channel`, `retailer`, `store_code_customer`, `store_code_sff`, `sub_channel`,
+        `store_name`, `chain_store_or_not`, `customer`, `province`, `city_tier`, `strong_hold`, `battle_field`, `green_space`, `city1`, `city2`,
+        `location`, `distribute_from_which_dc`, `customer_region`, `store_status`, `active`, `inactive`, `attrited`, `closed`, `store_classification`,
+        `f`, `a`, `b`, `c`, `d`, `display`, `cooler`, `frozen_area`, `posm`, `sales_promoter`, `tasting`, `kam`, `product_brand`, `first_party`, `co_brand`,
+        `customer_brand`, `product_categories`, `frozen_beef`, `chilled_ps`, `syb`, `frozen_lamb`, `chilled_lamb`, `venison`, `angus`, `reserve`, `product_package`,
+        `entry`, `uprise`, `scale`, `gift_pack`, `no_of_sku`, `customer_sku_description`, `sku_description`, `beef_cube500g`, `beef_hotpot_roll200g`,
+        `beef_mince500g`, `beef_shank_meat1000g`, `beef_tail500g`, `lamb_cube_bone_in500g`, `lamb_french_rack200g`, `lamb_leg_steak1000g`,
+        `neb_in_store_weighing`, `ps_beef_flat_in_store_weighing`, `rib_eye_steak150g`, `rib_eye_steak500g`, `striploin_steak150g`, `striploin_steak500g`,
+        `venison_flap_cubes1000g`, `venison_flap_cubes400g`, `venison_shank_meat800g`, `venison_french_racks1000g`, `venison_french_racks450g`,
+        `venison_ribs500g`, `venison_shank800g`, `venison_striploin150g`, `chilled_lamb_fr_Rack_weighting`, `venison_gift_box`, `lamb_ccs`, `date`,
+        `year`, `month`, `day`, `sales_value`, `sales_weight`, `sales_qty`, `pack_size`, `claim_rate`, `create_user_id`, `create_time`, `status`)
+        values
+        <foreach collection="list" item="item" separator=",">
+        (
+            #{item.item}, #{item.channel}, #{item.retailer}, #{item.storeCodeCustomer}, #{item.storeCodeSff}, #{item.subChannel}, #{item.storeName}, #{item.chainStoreOrNot}, #{item.customer}, #{item.province},
+            #{item.cityTier}, #{item.strongHold}, #{item.battleField}, #{item.greenSpace}, #{item.city1}, #{item.city2}, #{item.location},
+            #{item.distributeFromWhichDc}, #{item.customerRegion}, #{item.storeStatus}, #{item.active}, #{item.inactive}, #{item.attrited}, #{item.closed}, #{item.storeClassification}, #{item.f}, #{item.a},
+            #{item.b}, #{item.c}, #{item.d}, #{item.display}, #{item.cooler}, #{item.frozenArea}, #{item.posm}, #{item.salesPromoter},
+            #{item.tasting}, #{item.kam}, #{item.productBrand}, #{item.firstParty}, #{item.coBrand}, #{item.customerBrand}, #{item.productCategories}, #{item.frozenBeef}, #{item.chilledPs}, #{item.syb}, #{item.frozenLamb},
+            #{item.chilledLamb}, #{item.venison}, #{item.angus}, #{item.reserve}, #{item.productPackage}, #{item.entry}, #{item.uprise},
+            #{item.scale}, #{item.giftPack}, #{item.noOfSku}, #{item.customerSkuDescription}, #{item.skuDescription}, #{item.beefCube500g}, #{item.beefHotpotRoll200g}, #{item.beefMince500g}, #{item.beefShankMeat1000g}, #{item.beefTail500g}, #{item.lambCubeBoneIn500g},
+            #{item.lambFrenchRack200g}, #{item.lambLegSteak1000g}, #{item.nebInStoreWeighing}, #{item.psBeefFlatInStoreWeighing}, #{item.ribEyeSteak150g}, #{item.ribEyeSteak500g}, #{item.striploinSteak150g},
+            #{item.striploinSteak500g}, #{item.venisonFlapCubes1000g}, #{item.venisonFlapCubes400g}, #{item.venisonShankMeat800g}, #{item.venisonFrenchRacks1000g}, #{item.venisonFrenchRacks450g}, #{item.venisonRibs500g}, #{item.venisonShank800g}, #{item.venisonStriploin150g}, #{item.chilledLambFrRackWeighting},
+            #{item.venisonGiftBox}, #{item.lambCcs}, #{item.date}, #{item.year}, #{item.month}, #{item.day}, #{item.salesValue}, #{item.salesWeight},
+            #{item.salesQty}, #{item.packSize}, #{item.claimRate}, #{item.createUserId}, #{item.createTime}, 1
+        )
+        </foreach>
+    </insert>
+
+    <update id="delDataImport">
+        UPDATE data_import SET status = 0 where #{date} = DATE_FORMAT(create_time,'%Y-%m-%d') and create_user_id = #{createUserId}
+    </update>
+           <!-- id AS id,
+            item AS item,
+            channel AS channel,
+            retailer AS retailer,
+            store_code_customer AS storeCodeCustomer,
+            store_code_sff AS storeCodeSff,
+            sub_channel AS subChannel,
+            store_name AS storeName,
+            chain_store_or_not AS chainStoreOrNot,
+            customer AS customer,
+            province AS province,
+            city_tier AS cityTier,
+            strong_hold AS strongHold,
+            battle_field AS battleField,
+            green_space AS greenSpace,
+            city1 AS city1,
+            city2 AS city2,
+            location AS location,
+            distribute_from_which_dc AS distributeFromWhichDc,
+            customer_region AS customerRegion,
+            store_status AS storeStatus,
+            active AS active,
+            inactive AS inactive,
+            attrited AS attrited,
+            closed AS closed,
+            store_classification AS storeClassification,
+            f AS f,
+            a AS a,
+            b AS b,
+            c AS c,
+            d AS d,
+            display AS display,
+            cooler AS cooler,
+            frozen_area AS frozenArea,
+            posm AS posm,
+            sales_promoter AS salesPromoter,
+            tasting AS tasting,
+            kam AS kam,
+            product_brand AS productBrand,
+            first_party AS firstParty,
+            co_brand AS coBrand,
+            customer_brand AS customerBrand,
+            product_categories AS productCategories,
+            frozen_beef AS frozenBeef,
+            chilled_ps AS chilledPs,
+            syb AS syb,
+            frozen_lamb AS frozenLamb,
+            chilled_lamb AS chilledLamb,
+            venison AS venison,
+            angus AS angus,
+            reserve AS reserve,
+            product_package AS productPackage,
+            entry AS entry,
+            uprise AS uprise,
+            scale AS scale,
+            gift_pack AS giftPack,
+            no_of_sku AS noOfSku,
+            customer_sku_description AS customerSkuDescription,
+            sku_description AS skuDescription,
+            beef_cube_500g AS beefCube500g,
+            beef_hotpot_roll_200g AS beefHotpotRoll200g,
+            beef_mince_500g AS beefMince500g,
+            beef_shank_meat_1000g AS beefShankMeat1000g,
+            beef_tail_500g AS beefTail500g,
+            lamb_cube_bone_in_500g AS lambCubeBoneIn500g,
+            lamb_french_rack_200g AS lambFrenchRack200g,
+            lamb_leg_steak_1000g AS lambLegSteak1000g,
+            neb_in_store_weighing AS nebInStoreWeighing,
+            ps_beef_flat_in_store_weighing AS psBeefFlatInStoreWeighing,
+            rib_eye_steak_150g AS ribEyeSteak150g,
+            rib_eye_steak_500g AS ribEyeSteak500g,
+            striploin_steak_150g AS striploinSteak150g,
+            striploin_steak_500g AS striploinSteak500g,
+            venison_flap_cubes_1000g AS venisonFlapCubes1000g,
+            venison_flap_cubes_400g AS venisonFlapCubes400g,
+            venison_shank_meat_800g AS venisonShankMeat800g,
+            venison_french_racks_1000g AS venisonFrenchRacks1000g,
+            venison_french_racks_450g AS venisonFrenchRacks450g,
+            venison_ribs_500g AS venisonRibs500g,
+            venison_shank_800g AS venisonShank800g,
+            venison_striploin_150g AS venisonStriploin150g,
+            chilled_lamb_fr_Rack_weighting AS chilledLambFrRackWeighting,
+            venison_gift_box AS venisonGiftBox,
+            lamb_ccs AS lambCcs,
+            date AS date,
+            year AS year,
+            month AS month,
+            day AS day,
+            sales_value AS salesValue,
+            sales_weight AS salesWeight,
+            sales_qty AS salesQty,
+            pack_size AS packSize,
+            claim_rate AS claimRate,
+            create_user_id AS createUserId,
+            create_time AS createTime,
+            status AS status,-->
+    </mapper>

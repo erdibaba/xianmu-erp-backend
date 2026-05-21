@@ -1,0 +1,61 @@
+CREATE TABLE IF NOT EXISTS `erp_inbound_order` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `presale_order_id` bigint NOT NULL COMMENT '预销售单ID',
+  `brand_id` bigint DEFAULT NULL COMMENT '品牌方ID',
+  `brand_name` varchar(200) DEFAULT NULL COMMENT '品牌方名称',
+  `contract_no` varchar(100) DEFAULT NULL COMMENT '合同号',
+  `customer_name` varchar(200) DEFAULT NULL COMMENT '客户',
+  `order_date` datetime DEFAULT NULL COMMENT '下单日期',
+  `expected_arrival_date` datetime DEFAULT NULL COMMENT '预计到港日期',
+  `container_no` varchar(100) DEFAULT NULL COMMENT '集装箱号',
+  `driver_name` varchar(100) DEFAULT NULL COMMENT '司机姓名',
+  `truck_no` varchar(100) DEFAULT NULL COMMENT '车牌号',
+  `driver_phone` varchar(100) DEFAULT NULL COMMENT '司机电话',
+  `id_card_no` varchar(100) DEFAULT NULL COMMENT '身份证号',
+  `customer_order_no` varchar(200) DEFAULT NULL COMMENT '客户订单号',
+  `wms_order_no` varchar(100) DEFAULT NULL COMMENT 'WMS订单号',
+  `raw_text` longtext COMMENT '识别原文',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
+  `create_user_id` bigint DEFAULT NULL COMMENT '创建人',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_erp_inbound_order_presale` (`presale_order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='入库管理主表';
+
+CREATE TABLE IF NOT EXISTS `erp_inbound_order_item` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `inbound_order_id` bigint NOT NULL COMMENT '入库单ID',
+  `line_no` int DEFAULT NULL COMMENT '行号',
+  `product_id` bigint DEFAULT NULL COMMENT '产品ID',
+  `product_code` varchar(100) DEFAULT NULL COMMENT '产品编码',
+  `sku_code` varchar(200) DEFAULT NULL COMMENT 'SKU编码',
+  `product_name` varchar(255) DEFAULT NULL COMMENT '产品中文名称',
+  `product_name_en` varchar(255) DEFAULT NULL COMMENT '产品英文名称',
+  `product_spec` varchar(100) DEFAULT NULL COMMENT '规格',
+  `unit` varchar(50) DEFAULT NULL COMMENT '单位',
+  `expected_qty` int DEFAULT NULL COMMENT '预期数',
+  `actual_qty` int DEFAULT NULL COMMENT '实收数',
+  `packing_boxes` int DEFAULT NULL COMMENT '装箱单箱数',
+  `temperature_zone` varchar(100) DEFAULT NULL COMMENT '温区',
+  `production_date` datetime DEFAULT NULL COMMENT '生产日期',
+  `expiry_date` datetime DEFAULT NULL COMMENT '过期日期',
+  `shelf_life_days` int DEFAULT NULL COMMENT '保质期天数',
+  `spec_weight` decimal(10,4) DEFAULT NULL COMMENT '规格重量',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_erp_inbound_order_item_order` (`inbound_order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='入库管理明细表';
+
+CREATE TABLE IF NOT EXISTS `erp_inbound_order_file` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `inbound_order_id` bigint NOT NULL COMMENT '入库单ID',
+  `line_no` int DEFAULT NULL COMMENT '文件顺序号',
+  `file_path` varchar(500) DEFAULT NULL COMMENT '文件路径',
+  `file_name` varchar(255) DEFAULT NULL COMMENT '文件名称',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_erp_inbound_order_file_order` (`inbound_order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='入库管理原件归档表';
