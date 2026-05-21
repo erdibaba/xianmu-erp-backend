@@ -1156,7 +1156,7 @@ implements ErpSaleOrderService {
     private void validateUploadAccess(ErpSaleOrderEntity order, String fileType, Long userId, boolean portalMode) {
         String normalizedType = StringUtils.upperCase((String)StringUtils.trim((String)fileType));
         if (FILE_TYPE_SIGNED_CONTRACT.equals(normalizedType)) {
-            if (portalMode && this.defaultFlag(order.getSignedContractConfirmed()) == 1) {
+            if (this.defaultFlag(order.getSignedContractConfirmed()) == 1) {
                 throw new RuntimeException("盖章合同已确认，不能重复上传");
             }
             return;
@@ -1165,7 +1165,7 @@ implements ErpSaleOrderService {
             if (this.defaultFlag(order.getSignedContractConfirmed()) == 0) {
                 throw new RuntimeException("请先完成盖章合同确认");
             }
-            if (portalMode && this.defaultFlag(order.getBuyerPaymentConfirmed()) == 1) {
+            if (this.defaultFlag(order.getBuyerPaymentConfirmed()) == 1) {
                 throw new RuntimeException("二批打款凭证已确认，不能重复上传");
             }
             return;
