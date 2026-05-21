@@ -621,9 +621,6 @@ implements ErpSaleOrderService {
         if (SALE_TYPE_SPOT.equals(order.getSaleType()) && order.getWarehouseId() == null) {
             throw new RuntimeException("现货单必须选择仓库");
         }
-        if (SALE_TYPE_FUTURES.equals(order.getSaleType()) && order.getSourcePresaleOrderId() == null) {
-            throw new RuntimeException("请选择关联预销售单");
-        }
         if (order.getItemList() == null || order.getItemList().isEmpty()) {
             throw new RuntimeException("销售明细不能为空");
         }
@@ -656,15 +653,18 @@ implements ErpSaleOrderService {
 
     private List<ErpSaleOrderItemEntity> buildFuturesItems(ErpSaleOrderEntity order) {
         ArrayList<ErpSaleOrderItemEntity> result = new ArrayList<ErpSaleOrderItemEntity>();
-        ErpPresaleOrderEntity presaleOrder = (ErpPresaleOrderEntity)this.erpPresaleOrderDao.selectById(order.getSourcePresaleOrderId());
-        if (presaleOrder == null) {
-            throw new RuntimeException("关联预销售单不存在");
-        }
-        List<ErpPresaleOrderItemEntity> presaleItems = this.erpPresaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"presale_order_id", (Object)presaleOrder.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
         HashMap<Long, ErpPresaleOrderItemEntity> presaleItemMap = new HashMap<Long, ErpPresaleOrderItemEntity>();
-        for (ErpPresaleOrderItemEntity presaleItem : presaleItems) {
-            if (presaleItem.getProductId() == null || presaleItemMap.containsKey(presaleItem.getProductId())) continue;
-            presaleItemMap.put(presaleItem.getProductId(), presaleItem);
+        ErpPresaleOrderEntity presaleOrder = null;
+        if (order.getSourcePresaleOrderId() != null) {
+            presaleOrder = (ErpPresaleOrderEntity)this.erpPresaleOrderDao.selectById(order.getSourcePresaleOrderId());
+            if (presaleOrder == null) {
+                throw new RuntimeException("关联预销售单不存在");
+            }
+            List<ErpPresaleOrderItemEntity> presaleItems = this.erpPresaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"presale_order_id", (Object)presaleOrder.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
+            for (ErpPresaleOrderItemEntity presaleItem : presaleItems) {
+                if (presaleItem.getProductId() == null || presaleItemMap.containsKey(presaleItem.getProductId())) continue;
+                presaleItemMap.put(presaleItem.getProductId(), presaleItem);
+            }
         }
         int lineNo = 1;
         for (ErpSaleOrderItemEntity item : order.getItemList()) {
@@ -692,7 +692,7 @@ implements ErpSaleOrderService {
             if (product == null) {
                 throw new RuntimeException("期货单第" + lineNo + "行产品不存在");
             }
-            if (presaleItem == null) {
+            if (presaleOrder != null && presaleItem == null) {
                 throw new RuntimeException("期货单第" + lineNo + "行产品未在关联预销售单中找到");
             }
             ErpSaleOrderItemEntity saved = new ErpSaleOrderItemEntity();
@@ -705,9 +705,9 @@ implements ErpSaleOrderService {
             saved.setProductSpec(product.getProductSpec());
             saved.setUnit(product.getUnit());
             saved.setBoxes(item.getBoxes());
-            saved.setSourcePresaleOrderId(presaleOrder.getId());
-            saved.setSourcePresaleOrderNo(this.firstNonBlank(presaleOrder.getSellerContractNo(), presaleOrder.getOrderNo()));
-            saved.setSourcePresaleOrderItemId(presaleItem.getId());
+            saved.setSourcePresaleOrderId(presaleOrder == null ? null : presaleOrder.getId());
+            saved.setSourcePresaleOrderNo(presaleOrder == null ? null : this.firstNonBlank(presaleOrder.getSellerContractNo(), presaleOrder.getOrderNo()));
+            saved.setSourcePresaleOrderItemId(presaleItem == null ? null : presaleItem.getId());
             saved.setSalePriceKg(item.getSalePriceKg().setScale(2, RoundingMode.HALF_UP));
             saved.setContractQuantityKg(item.getContractQuantityKg().setScale(2, RoundingMode.HALF_UP));
             saved.setContractFactoryNo(StringUtils.trimToEmpty((String)item.getContractFactoryNo()));
