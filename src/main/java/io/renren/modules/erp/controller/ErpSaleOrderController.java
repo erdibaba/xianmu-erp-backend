@@ -66,6 +66,31 @@ public class ErpSaleOrderController extends AbstractController {
     }
   }
 
+  @PostMapping("/presale-link/update")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R updatePresaleLink(@RequestBody Map<String, Object> params) {
+    try {
+      Long saleOrderId = params.get("saleOrderId") == null ? null : Long.valueOf(String.valueOf(params.get("saleOrderId")));
+      Long presaleOrderId = params.get("presaleOrderId") == null ? null : Long.valueOf(String.valueOf(params.get("presaleOrderId")));
+      erpSaleOrderService.updatePresaleLink(saleOrderId, presaleOrderId, getUserId());
+      return R.ok();
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @PostMapping("/presale-link/confirm")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R confirmPresaleLink(@RequestBody Map<String, Object> params) {
+    try {
+      Long saleOrderId = params.get("saleOrderId") == null ? null : Long.valueOf(String.valueOf(params.get("saleOrderId")));
+      erpSaleOrderService.confirmPresaleLink(saleOrderId, getUserId());
+      return R.ok();
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
   @PostMapping("/preview-allocation")
   @RequiresPermissions("erp:tradeorder:save")
   public R previewAllocation(@RequestBody ErpSaleOrderEntity order) {

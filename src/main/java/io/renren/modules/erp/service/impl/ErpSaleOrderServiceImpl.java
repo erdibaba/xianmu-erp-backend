@@ -172,6 +172,84 @@ implements ErpSaleOrderService {
 
     @Override
     @Transactional(rollbackFor={Exception.class})
+    public void updatePresaleLink(Long saleOrderId, Long presaleOrderId, Long userId) {
+        if (saleOrderId == null) {
+            throw new RuntimeException("请先选择销售单");
+        }
+        ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(saleOrderId);
+        if (order == null) {
+            throw new RuntimeException("销售单不存在");
+        }
+        if (!SALE_TYPE_FUTURES.equals(order.getSaleType())) {
+            throw new RuntimeException("只有期货单可以关联预销售单");
+        }
+        if (this.defaultFlag(order.getPresaleLinkConfirmed()) == 1) {
+            throw new RuntimeException("关联预销售单已确认，不能修改");
+        }
+        if (presaleOrderId == null) {
+            throw new RuntimeException("请选择关联预销售单");
+        }
+        ErpPresaleOrderEntity presaleOrder = null;
+        Map<Long, ErpPresaleOrderItemEntity> presaleItemMap = new HashMap<Long, ErpPresaleOrderItemEntity>();
+        if (presaleOrderId != null) {
+            presaleOrder = (ErpPresaleOrderEntity)this.erpPresaleOrderDao.selectById(presaleOrderId);
+            if (presaleOrder == null) {
+                throw new RuntimeException("关联预销售单不存在");
+            }
+            List<ErpPresaleOrderItemEntity> presaleItems = this.erpPresaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"presale_order_id", (Object)presaleOrder.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
+            for (ErpPresaleOrderItemEntity presaleItem : presaleItems) {
+                if (presaleItem.getProductId() == null || presaleItemMap.containsKey(presaleItem.getProductId())) continue;
+                presaleItemMap.put(presaleItem.getProductId(), presaleItem);
+            }
+        }
+        List<ErpSaleOrderItemEntity> items = this.erpSaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)saleOrderId)).orderByAsc((Object[])new String[]{"line_no", "id"}));
+        String presaleOrderNo = presaleOrder == null ? null : this.firstNonBlank(presaleOrder.getSellerContractNo(), presaleOrder.getOrderNo());
+        for (ErpSaleOrderItemEntity item : items) {
+            ErpPresaleOrderItemEntity presaleItem = presaleOrder == null ? null : (ErpPresaleOrderItemEntity)presaleItemMap.get(item.getProductId());
+            if (presaleOrder != null && presaleItem == null) {
+                throw new RuntimeException("产品" + StringUtils.defaultString((String)item.getProductCode(), (String)"-") + "未在关联预销售单中找到");
+            }
+            item.setSourcePresaleOrderId(presaleOrder == null ? null : presaleOrder.getId());
+            item.setSourcePresaleOrderNo(presaleOrderNo);
+            item.setSourcePresaleOrderItemId(presaleItem == null ? null : presaleItem.getId());
+            item.setUpdateTime(new Date());
+            this.erpSaleOrderItemDao.updateById(item);
+        }
+        order.setSourcePresaleOrderId(presaleOrder == null ? null : presaleOrder.getId());
+        order.setSourcePresaleOrderNo(presaleOrderNo);
+        order.setUpdateTime(new Date());
+        this.updateById(order);
+    }
+
+    @Override
+    @Transactional(rollbackFor={Exception.class})
+    public void confirmPresaleLink(Long saleOrderId, Long userId) {
+        if (saleOrderId == null) {
+            throw new RuntimeException("请先选择销售单");
+        }
+        ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(saleOrderId);
+        if (order == null) {
+            throw new RuntimeException("销售单不存在");
+        }
+        if (!SALE_TYPE_FUTURES.equals(order.getSaleType())) {
+            throw new RuntimeException("只有期货单可以确认预销售单关联");
+        }
+        if (this.defaultFlag(order.getPresaleLinkConfirmed()) == 1) {
+            throw new RuntimeException("关联预销售单已确认");
+        }
+        if (order.getSourcePresaleOrderId() == null) {
+            this.loadChildren(order);
+        }
+        if (order.getSourcePresaleOrderId() == null) {
+            throw new RuntimeException("请先选择关联预销售单");
+        }
+        order.setPresaleLinkConfirmed(1);
+        order.setUpdateTime(new Date());
+        this.updateById(order);
+    }
+
+    @Override
+    @Transactional(rollbackFor={Exception.class})
     public void deleteOrders(Long[] ids) {
         if (ids == null || ids.length == 0) {
             return;
@@ -591,6 +669,7 @@ implements ErpSaleOrderService {
             order.setBuyerPaymentConfirmed(0);
             order.setBuyerBankConfirmed(0);
             order.setFunderPaymentConfirmed(0);
+            order.setPresaleLinkConfirmed(0);
         } else {
             order.setCreateUserId(existing.getCreateUserId());
             order.setCreateTime(existing.getCreateTime());
@@ -607,6 +686,7 @@ implements ErpSaleOrderService {
             order.setBuyerPaymentConfirmed(this.defaultFlag(existing.getBuyerPaymentConfirmed()));
             order.setBuyerBankConfirmed(this.defaultFlag(existing.getBuyerBankConfirmed()));
             order.setFunderPaymentConfirmed(this.defaultFlag(existing.getFunderPaymentConfirmed()));
+            order.setPresaleLinkConfirmed(this.defaultFlag(existing.getPresaleLinkConfirmed()));
         }
         order.setUpdateTime(now);
     }
@@ -666,6 +746,8 @@ implements ErpSaleOrderService {
                 presaleItemMap.put(presaleItem.getProductId(), presaleItem);
             }
         }
+        order.setSourcePresaleOrderId(presaleOrder == null ? null : presaleOrder.getId());
+        order.setSourcePresaleOrderNo(presaleOrder == null ? null : this.firstNonBlank(presaleOrder.getSellerContractNo(), presaleOrder.getOrderNo()));
         int lineNo = 1;
         for (ErpSaleOrderItemEntity item : order.getItemList()) {
             if (item == null) continue;

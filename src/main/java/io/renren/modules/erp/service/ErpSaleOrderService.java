@@ -20,6 +20,10 @@ public interface ErpSaleOrderService {
 
   void updateOrder(ErpSaleOrderEntity order, Long userId);
 
+  void updatePresaleLink(Long saleOrderId, Long presaleOrderId, Long userId);
+
+  void confirmPresaleLink(Long saleOrderId, Long userId);
+
   void deleteOrders(Long[] ids);
 
   List<ErpSalePresaleOrderVo> queryPresaleOrders(String keyword);
