@@ -3,6 +3,7 @@ package io.renren.modules.erp.entity;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Date;
@@ -24,6 +25,7 @@ public class ErpSaleOrderEntity implements Serializable {
   private String warehouseName;
   private String contractNo;
   private String contractToken;
+  @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
   private Date contractSignDate;
   private Integer status;
   private Integer signedContractConfirmed;
