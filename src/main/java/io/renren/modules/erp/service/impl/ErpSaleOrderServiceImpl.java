@@ -167,7 +167,7 @@ implements ErpSaleOrderService {
     @Override
     @Transactional(rollbackFor={Exception.class})
     public void updateOrder(ErpSaleOrderEntity order, Long userId) {
-        throw new RuntimeException("\u9500\u552e\u5355\u521b\u5efa\u540e\u4e0d\u5141\u8bb8\u4fee\u6539\uff0c\u8bf7\u5220\u9664\u540e\u91cd\u65b0\u521b\u5efa");
+        throw new RuntimeException("销售单创建后不允许修改，请删除后重新创建");
     }
 
     @Override
@@ -179,7 +179,7 @@ implements ErpSaleOrderService {
         for (Long id : ids) {
             long fileCount = this.erpSaleOrderFileDao.selectCount((Wrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)id)).intValue();
             if (fileCount > 0L) {
-                throw new RuntimeException("\u9500\u552e\u5355\u5df2\u4e0a\u4f20\u9644\u4ef6\uff0c\u4e0d\u80fd\u5220\u9664");
+                throw new RuntimeException("销售单已上传附件，不能删除");
             }
             this.erpSaleOrderItemDao.delete((Wrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)id));
             this.erpSaleOrderFileDao.delete((Wrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)id));
@@ -275,7 +275,7 @@ implements ErpSaleOrderService {
     private List<ErpSaleOrderFileEntity> doUploadFiles(Long saleOrderId, String fileType, MultipartFile[] files, Long userId, boolean portalMode) throws Exception {
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(saleOrderId);
         if (order == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u5b58\u5728");
+            throw new RuntimeException("销售单不存在");
         }
         this.validateUploadAccess(order, fileType, userId, portalMode);
         int lineNo = this.nextFileLineNo(saleOrderId, fileType);
@@ -302,18 +302,18 @@ implements ErpSaleOrderService {
     public ResponseEntity<byte[]> downloadFile(Long fileId) {
         ErpSaleOrderFileEntity file = (ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(fileId);
         if (file == null || StringUtils.isBlank((String)file.getFilePath())) {
-            throw new RuntimeException("\u6587\u4ef6\u4e0d\u5b58\u5728");
+            throw new RuntimeException("文件不存在");
         }
         try {
             File target = new File(file.getFilePath());
             if (!target.exists()) {
-                throw new RuntimeException("\u6587\u4ef6\u4e0d\u5b58\u5728");
+                throw new RuntimeException("文件不存在");
             }
             byte[] bytes = Files.readAllBytes(target.toPath());
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM).header("Content-Disposition", ContentDisposition.attachment().filename(file.getFileName(), StandardCharsets.UTF_8).build().toString()).body(bytes);
         }
         catch (Exception ex) {
-            throw new RuntimeException("\u6587\u4ef6\u4e0b\u8f7d\u5931\u8d25: " + ex.getMessage(), ex);
+            throw new RuntimeException("文件下载失败: " + ex.getMessage(), ex);
         }
     }
 
@@ -322,11 +322,11 @@ implements ErpSaleOrderService {
     public void deleteFile(Long fileId, Long userId) {
         ErpSaleOrderFileEntity file = (ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(fileId);
         if (file == null) {
-            throw new RuntimeException("\u9644\u4ef6\u4e0d\u5b58\u5728");
+            throw new RuntimeException("附件不存在");
         }
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(file.getSaleOrderId());
         if (order == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u5b58\u5728");
+            throw new RuntimeException("销售单不存在");
         }
         this.validateDeleteAccess(order, file.getFileType(), false);
         this.deleteFileRecord(file);
@@ -337,7 +337,7 @@ implements ErpSaleOrderService {
     public ResponseEntity<byte[]> downloadPortalFile(Long fileId, Long userId) {
         ErpSaleOrderFileEntity file = (ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(fileId);
         if (file == null) {
-            throw new RuntimeException("\u9644\u4ef6\u4e0d\u5b58\u5728");
+            throw new RuntimeException("附件不存在");
         }
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(file.getSaleOrderId());
         this.ensurePortalOwner(order, userId);
@@ -366,7 +366,7 @@ implements ErpSaleOrderService {
     public void deletePortalFile(Long fileId, Long userId) {
         ErpSaleOrderFileEntity file = (ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(fileId);
         if (file == null) {
-            throw new RuntimeException("\u9644\u4ef6\u4e0d\u5b58\u5728");
+            throw new RuntimeException("附件不存在");
         }
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(file.getSaleOrderId());
         this.ensurePortalOwner(order, userId);
@@ -388,7 +388,7 @@ implements ErpSaleOrderService {
     public void confirmInternalStep(Long saleOrderId, String fileType, Long userId) {
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(saleOrderId);
         if (order == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u5b58\u5728");
+            throw new RuntimeException("销售单不存在");
         }
         this.confirmStep(order, fileType, userId, false);
     }
@@ -396,33 +396,33 @@ implements ErpSaleOrderService {
     @Override
     public String buildContractHtml(String token) {
         if (StringUtils.isBlank((String)token)) {
-            return "<html><body><h3>\u5408\u540c\u94fe\u63a5\u65e0\u6548</h3></body></html>";
+            return "<html><body><h3>合同链接无效</h3></body></html>";
         }
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"contract_token", (Object)token)).last("limit 1"));
         if (order == null) {
-            return "<html><body><h3>\u5408\u540c\u4e0d\u5b58\u5728\u6216\u94fe\u63a5\u5df2\u5931\u6548</h3></body></html>";
+            return "<html><body><h3>合同不存在或链接已失效</h3></body></html>";
         }
         this.loadChildren(order);
         this.enrichOrderDisplay(order, true);
         List<ErpSaleOrderItemEntity> displayItems = SALE_TYPE_SPOT.equals(order.getSaleType()) ? order.getAllocationItemList() : order.getItemList();
         StringBuilder html = new StringBuilder();
-        html.append("<html><head><meta charset='UTF-8'><title>\u9500\u552e\u5408\u540c</title>").append("<style>body{font-family:Arial,'Microsoft YaHei';padding:24px;color:#222;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #dcdfe6;padding:8px;font-size:14px;}th{background:#f5f7fa;}h2{margin:0 0 12px;} .meta{line-height:28px;}</style>").append("</head><body>");
-        html.append("<h2>\u9500\u552e\u5408\u540c</h2>");
-        html.append("<div class='meta'>\u5408\u540c\u53f7\uff1a").append(this.escapeHtml(order.getContractNo())).append("</div>");
-        html.append("<div class='meta'>\u9500\u552e\u5355\u53f7\uff1a").append(this.escapeHtml(order.getOrderNo())).append("</div>");
-        html.append("<div class='meta'>\u7c7b\u578b\uff1a").append(SALE_TYPE_SPOT.equals(order.getSaleType()) ? "\u73b0\u8d27\u5355" : "\u671f\u8d27\u5355").append("</div>");
-        html.append("<div class='meta'>\u4e8c\u6279\u5546\uff1a").append(this.escapeHtml(order.getSecondaryPartnerName())).append("</div>");
-        html.append("<div class='meta'>\u4ed3\u5e93\uff1a").append(this.escapeHtml(StringUtils.defaultString((String)order.getWarehouseName(), (String)"-"))).append("</div>");
-        html.append("<table><thead><tr><th>\u5e8f\u53f7</th><th>\u4ea7\u54c1\u7f16\u7801</th><th>\u4e2d\u6587\u540d\u79f0</th><th>\u82f1\u6587\u540d\u79f0</th><th>\u67dc\u53f7</th><th>\u7bb1\u6570</th></tr></thead><tbody>");
+        html.append("<html><head><meta charset='UTF-8'><title>销售合同</title>").append("<style>body{font-family:Arial,'Microsoft YaHei';padding:24px;color:#222;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #dcdfe6;padding:8px;font-size:14px;}th{background:#f5f7fa;}h2{margin:0 0 12px;} .meta{line-height:28px;}</style>").append("</head><body>");
+        html.append("<h2>销售合同</h2>");
+        html.append("<div class='meta'>合同号：").append(this.escapeHtml(order.getContractNo())).append("</div>");
+        html.append("<div class='meta'>销售单号：").append(this.escapeHtml(order.getOrderNo())).append("</div>");
+        html.append("<div class='meta'>类型：").append(SALE_TYPE_SPOT.equals(order.getSaleType()) ? "现货单" : "期货单").append("</div>");
+        html.append("<div class='meta'>二批商：").append(this.escapeHtml(order.getSecondaryPartnerName())).append("</div>");
+        html.append("<div class='meta'>仓库：").append(this.escapeHtml(StringUtils.defaultString((String)order.getWarehouseName(), (String)"-"))).append("</div>");
+        html.append("<table><thead><tr><th>序号</th><th>产品编码</th><th>中文名称</th><th>英文名称</th><th>柜号</th><th>箱数</th></tr></thead><tbody>");
         int index = 1;
         for (ErpSaleOrderItemEntity item : displayItems) {
             html.append("<tr>").append("<td>").append(index++).append("</td>").append("<td>").append(this.escapeHtml(item.getProductCode())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductName())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductNameEn())).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getSourceContainerNo(), "-"))).append("</td>").append("<td>").append(this.defaultInt(item.getBoxes())).append("</td>").append("</tr>");
         }
         html.append("</tbody></table>");
-        html.append("<div style='margin-top:24px;'>\u8bf7\u5148\u4e0b\u8f7dPDF\u5408\u540c\u5e76\u76d6\u7ae0\uff0c\u56de\u4f20\u540e\u518d\u8fdb\u5165\u4ed8\u6b3e\u51ed\u8bc1\u4e0a\u4f20\u6d41\u7a0b\u3002</div>");
+        html.append("<div style='margin-top:24px;'>请先下载PDF合同并盖章，回传后再进入付款凭证上传流程。</div>");
         html.append("<div style='margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;'>");
-        html.append("<a href='").append(CONTRACT_BASE_URL).append("pdf/").append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>\u4e0b\u8f7dPDF\u5408\u540c</a>");
-        html.append("<a href='").append(PORTAL_BASE_URL).append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>\u767b\u5f55\u4e0a\u4f20\u76d6\u7ae0\u5408\u540c\u4e0e\u4ed8\u6b3e\u51ed\u8bc1</a>");
+        html.append("<a href='").append(CONTRACT_BASE_URL).append("pdf/").append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>下载PDF合同</a>");
+        html.append("<a href='").append(PORTAL_BASE_URL).append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>登录上传盖章合同与付款凭证</a>");
         html.append("</div>");
         html.append("</body></html>");
         return html.toString();
@@ -550,11 +550,11 @@ implements ErpSaleOrderService {
         List<ErpSaleOrderItemEntity> preparedItems;
         ErpSaleOrderEntity existing;
         if (order == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new RuntimeException("销售单不能为空");
         }
         ErpSaleOrderEntity erpSaleOrderEntity = existing = create ? null : (ErpSaleOrderEntity)this.getById(order.getId());
         if (!create && existing == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u5b58\u5728");
+            throw new RuntimeException("销售单不存在");
         }
         Date now = new Date();
         this.normalizeOrder(order, existing, userId, now, create);
@@ -613,19 +613,19 @@ implements ErpSaleOrderService {
 
     private void validateOrder(ErpSaleOrderEntity order) {
         if (!SALE_TYPE_FUTURES.equals(order.getSaleType()) && !SALE_TYPE_SPOT.equals(order.getSaleType())) {
-            throw new RuntimeException("\u9500\u552e\u7c7b\u578b\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new RuntimeException("销售类型不能为空");
         }
         if (order.getSecondaryPartnerId() == null) {
-            throw new RuntimeException("\u8bf7\u9009\u62e9\u4e8c\u6279\u5546");
+            throw new RuntimeException("请选择二批商");
         }
         if (SALE_TYPE_SPOT.equals(order.getSaleType()) && order.getWarehouseId() == null) {
-            throw new RuntimeException("\u73b0\u8d27\u5355\u5fc5\u987b\u9009\u62e9\u4ed3\u5e93");
+            throw new RuntimeException("现货单必须选择仓库");
         }
         if (SALE_TYPE_FUTURES.equals(order.getSaleType()) && order.getSourcePresaleOrderId() == null) {
-            throw new RuntimeException("\u8bf7\u9009\u62e9\u5173\u8054\u9884\u9500\u552e\u5355");
+            throw new RuntimeException("请选择关联预销售单");
         }
         if (order.getItemList() == null || order.getItemList().isEmpty()) {
-            throw new RuntimeException("\u9500\u552e\u660e\u7ec6\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new RuntimeException("销售明细不能为空");
         }
         if (order.getContractSignDate() == null) {
             throw new RuntimeException("请填写签订日期");
@@ -658,7 +658,7 @@ implements ErpSaleOrderService {
         ArrayList<ErpSaleOrderItemEntity> result = new ArrayList<ErpSaleOrderItemEntity>();
         ErpPresaleOrderEntity presaleOrder = (ErpPresaleOrderEntity)this.erpPresaleOrderDao.selectById(order.getSourcePresaleOrderId());
         if (presaleOrder == null) {
-            throw new RuntimeException("\u5173\u8054\u9884\u9500\u552e\u5355\u4e0d\u5b58\u5728");
+            throw new RuntimeException("关联预销售单不存在");
         }
         List<ErpPresaleOrderItemEntity> presaleItems = this.erpPresaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"presale_order_id", (Object)presaleOrder.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
         HashMap<Long, ErpPresaleOrderItemEntity> presaleItemMap = new HashMap<Long, ErpPresaleOrderItemEntity>();
@@ -670,10 +670,10 @@ implements ErpSaleOrderService {
         for (ErpSaleOrderItemEntity item : order.getItemList()) {
             if (item == null) continue;
             if (item.getProductId() == null) {
-                throw new RuntimeException("\u671f\u8d27\u5355\u7b2c" + lineNo + "\u884c\u4ea7\u54c1\u4e0d\u80fd\u4e3a\u7a7a");
+                throw new RuntimeException("期货单第" + lineNo + "行产品不能为空");
             }
             if (item.getBoxes() == null || item.getBoxes() <= 0) {
-                throw new RuntimeException("\u671f\u8d27\u5355\u7b2c" + lineNo + "\u884c\u7bb1\u6570\u5fc5\u987b\u5927\u4e8e0");
+                throw new RuntimeException("期货单第" + lineNo + "行箱数必须大于0");
             }
             if (item.getSalePriceKg() == null || item.getSalePriceKg().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new RuntimeException("期货单第" + lineNo + "行销售价（元/千克）必须大于0");
@@ -690,10 +690,10 @@ implements ErpSaleOrderService {
             ErpProductEntity product = (ErpProductEntity)this.erpProductDao.selectById(item.getProductId());
             ErpPresaleOrderItemEntity presaleItem = (ErpPresaleOrderItemEntity)presaleItemMap.get(item.getProductId());
             if (product == null) {
-                throw new RuntimeException("\u671f\u8d27\u5355\u7b2c" + lineNo + "\u884c\u4ea7\u54c1\u4e0d\u5b58\u5728");
+                throw new RuntimeException("期货单第" + lineNo + "行产品不存在");
             }
             if (presaleItem == null) {
-                throw new RuntimeException("\u671f\u8d27\u5355\u7b2c" + lineNo + "\u884c\u4ea7\u54c1\u672a\u5728\u5173\u8054\u9884\u9500\u552e\u5355\u4e2d\u627e\u5230");
+                throw new RuntimeException("期货单第" + lineNo + "行产品未在关联预销售单中找到");
             }
             ErpSaleOrderItemEntity saved = new ErpSaleOrderItemEntity();
             saved.setLineNo(lineNo++);
@@ -726,17 +726,17 @@ implements ErpSaleOrderService {
         for (ErpSaleOrderItemEntity requestItem : order.getItemList()) {
             if (requestItem == null) continue;
             if (requestItem.getProductId() == null) {
-                throw new RuntimeException("\u73b0\u8d27\u5355\u7b2c" + lineNo + "\u884c\u4ea7\u54c1\u4e0d\u80fd\u4e3a\u7a7a");
+                throw new RuntimeException("现货单第" + lineNo + "行产品不能为空");
             }
             if (requestItem.getBoxes() == null || requestItem.getBoxes() <= 0) {
-                throw new RuntimeException("\u73b0\u8d27\u5355\u7b2c" + lineNo + "\u884c\u7bb1\u6570\u5fc5\u987b\u5927\u4e8e0");
+                throw new RuntimeException("现货单第" + lineNo + "行箱数必须大于0");
             }
             if (requestItem.getSalePriceKg() == null || requestItem.getSalePriceKg().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new RuntimeException("现货单第" + lineNo + "行销售价（元/千克）必须大于0");
             }
             List<StockCandidate> candidates = stockMap.get(requestItem.getProductId());
             if (candidates == null || candidates.isEmpty()) {
-                throw new RuntimeException("\u4ea7\u54c1" + StringUtils.defaultString((String)requestItem.getProductCode(), (String)"-") + "\u5728\u6240\u9009\u4ed3\u5e93\u6ca1\u6709\u53ef\u7528\u5e93\u5b58");
+                throw new RuntimeException("产品" + StringUtils.defaultString((String)requestItem.getProductCode(), (String)"-") + "在所选仓库没有可用库存");
             }
             int remaining = requestItem.getBoxes();
             for (StockCandidate candidate : candidates) {
@@ -778,7 +778,7 @@ implements ErpSaleOrderService {
                 result.add(allocated);
             }
             if (remaining <= 0) continue;
-            throw new RuntimeException("\u4ea7\u54c1" + StringUtils.defaultString((String)requestItem.getProductCode(), (String)"-") + "\u5e93\u5b58\u4e0d\u8db3\uff0c\u8fd8\u7f3a\u5c11" + remaining + "\u7bb1");
+            throw new RuntimeException("产品" + StringUtils.defaultString((String)requestItem.getProductCode(), (String)"-") + "库存不足，还缺少" + remaining + "箱");
         }
         if (requireContractFields) {
             int allocationRowNo = 1;
@@ -1043,31 +1043,31 @@ implements ErpSaleOrderService {
 
     private ErpSaleOrderEntity getOrderByToken(String token) {
         if (StringUtils.isBlank((String)token)) {
-            throw new RuntimeException("\u94fe\u63a5\u4ee4\u724c\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new RuntimeException("链接令牌不能为空");
         }
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"contract_token", (Object)token)).last("limit 1"));
         if (order == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u5b58\u5728\u6216\u94fe\u63a5\u5df2\u5931\u6548");
+            throw new RuntimeException("销售单不存在或链接已失效");
         }
         return order;
     }
 
     private void ensurePortalOwner(ErpSaleOrderEntity order, Long userId) {
         if (order == null) {
-            throw new RuntimeException("\u9500\u552e\u5355\u4e0d\u5b58\u5728");
+            throw new RuntimeException("销售单不存在");
         }
         if (userId == null || userId <= 0L) {
-            throw new RuntimeException("\u8bf7\u5148\u767b\u5f55\u540e\u518d\u64cd\u4f5c");
+            throw new RuntimeException("请先登录后再操作");
         }
         SysUserEntity user = (SysUserEntity)this.sysUserService.getById(userId);
         if (user == null) {
-            throw new RuntimeException("\u767b\u5f55\u7528\u6237\u4e0d\u5b58\u5728");
+            throw new RuntimeException("登录用户不存在");
         }
         if (user.getSecondaryPartnerId() == null) {
-            throw new RuntimeException("\u5f53\u524d\u8d26\u53f7\u672a\u7ed1\u5b9a\u4e8c\u6279\u4e3b\u4f53");
+            throw new RuntimeException("当前账号未绑定二批主体");
         }
         if (order.getSecondaryPartnerId() == null || !order.getSecondaryPartnerId().equals(user.getSecondaryPartnerId())) {
-            throw new RuntimeException("\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u8bbf\u95ee\u8be5\u9500\u552e\u5355");
+            throw new RuntimeException("当前账号无权访问该销售单");
         }
     }
 
@@ -1075,79 +1075,79 @@ implements ErpSaleOrderService {
         String normalizedType = StringUtils.upperCase((String)StringUtils.trim((String)fileType));
         if (FILE_TYPE_SIGNED_CONTRACT.equals(normalizedType)) {
             if (portalMode && this.defaultFlag(order.getSignedContractConfirmed()) == 1) {
-                throw new RuntimeException("\u76d6\u7ae0\u5408\u540c\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u91cd\u590d\u4e0a\u4f20");
+                throw new RuntimeException("盖章合同已确认，不能重复上传");
             }
             return;
         }
         if (FILE_TYPE_BUYER_PAYMENT.equals(normalizedType)) {
             if (this.defaultFlag(order.getSignedContractConfirmed()) == 0) {
-                throw new RuntimeException("\u8bf7\u5148\u5b8c\u6210\u76d6\u7ae0\u5408\u540c\u786e\u8ba4");
+                throw new RuntimeException("请先完成盖章合同确认");
             }
             if (portalMode && this.defaultFlag(order.getBuyerPaymentConfirmed()) == 1) {
-                throw new RuntimeException("\u4e8c\u6279\u6253\u6b3e\u51ed\u8bc1\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u91cd\u590d\u4e0a\u4f20");
+                throw new RuntimeException("二批打款凭证已确认，不能重复上传");
             }
             return;
         }
         if (FILE_TYPE_BUYER_BANK.equals(normalizedType)) {
             if (portalMode) {
-                throw new RuntimeException("\u8be5\u9644\u4ef6\u4ec5\u652f\u6301\u5185\u90e8\u4eba\u5458\u4e0a\u4f20");
+                throw new RuntimeException("该附件仅支持内部人员上传");
             }
             if (this.defaultFlag(order.getBuyerPaymentConfirmed()) == 0) {
-                throw new RuntimeException("\u8bf7\u5148\u5b8c\u6210\u4e8c\u6279\u6253\u6b3e\u51ed\u8bc1\u786e\u8ba4");
+                throw new RuntimeException("请先完成二批打款凭证确认");
             }
             if (this.defaultFlag(order.getBuyerBankConfirmed()) == 1) {
-                throw new RuntimeException("\u4e8c\u6279\u6765\u6b3e\u6c34\u5355\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u91cd\u590d\u4e0a\u4f20");
+                throw new RuntimeException("二批来款水单已确认，不能重复上传");
             }
             return;
         }
         if (FILE_TYPE_FUNDER_PAYMENT.equals(normalizedType)) {
             if (portalMode) {
-                throw new RuntimeException("\u8be5\u9644\u4ef6\u4ec5\u652f\u6301\u5185\u90e8\u4eba\u5458\u4e0a\u4f20");
+                throw new RuntimeException("该附件仅支持内部人员上传");
             }
             if (this.defaultFlag(order.getBuyerBankConfirmed()) == 0) {
-                throw new RuntimeException("\u8bf7\u5148\u5b8c\u6210\u4e8c\u6279\u6765\u6b3e\u6c34\u5355\u786e\u8ba4");
+                throw new RuntimeException("请先完成二批来款水单确认");
             }
             if (this.defaultFlag(order.getFunderPaymentConfirmed()) == 1) {
-                throw new RuntimeException("\u8d44\u65b9\u6253\u6b3e\u51ed\u8bc1\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u91cd\u590d\u4e0a\u4f20");
+                throw new RuntimeException("资方打款凭证已确认，不能重复上传");
             }
             return;
         }
-        throw new RuntimeException("\u4e0d\u652f\u6301\u7684\u9644\u4ef6\u7c7b\u578b");
+        throw new RuntimeException("不支持的附件类型");
     }
 
     private void validateDeleteAccess(ErpSaleOrderEntity order, String fileType, boolean portalMode) {
         String normalizedType = StringUtils.upperCase((String)StringUtils.trim((String)fileType));
         if (FILE_TYPE_SIGNED_CONTRACT.equals(normalizedType)) {
             if (this.defaultFlag(order.getSignedContractConfirmed()) == 1) {
-                throw new RuntimeException("\u76d6\u7ae0\u5408\u540c\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u5220\u9664");
+                throw new RuntimeException("盖章合同已确认，不能删除");
             }
             return;
         }
         if (FILE_TYPE_BUYER_PAYMENT.equals(normalizedType)) {
             if (this.defaultFlag(order.getBuyerPaymentConfirmed()) == 1) {
-                throw new RuntimeException("\u4e8c\u6279\u6253\u6b3e\u51ed\u8bc1\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u5220\u9664");
+                throw new RuntimeException("二批打款凭证已确认，不能删除");
             }
             return;
         }
         if (FILE_TYPE_BUYER_BANK.equals(normalizedType)) {
             if (portalMode) {
-                throw new RuntimeException("\u8be5\u9644\u4ef6\u4ec5\u652f\u6301\u5185\u90e8\u5220\u9664");
+                throw new RuntimeException("该附件仅支持内部删除");
             }
             if (this.defaultFlag(order.getBuyerBankConfirmed()) == 1) {
-                throw new RuntimeException("\u4e8c\u6279\u6765\u6b3e\u6c34\u5355\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u5220\u9664");
+                throw new RuntimeException("二批来款水单已确认，不能删除");
             }
             return;
         }
         if (FILE_TYPE_FUNDER_PAYMENT.equals(normalizedType)) {
             if (portalMode) {
-                throw new RuntimeException("\u8be5\u9644\u4ef6\u4ec5\u652f\u6301\u5185\u90e8\u5220\u9664");
+                throw new RuntimeException("该附件仅支持内部删除");
             }
             if (this.defaultFlag(order.getFunderPaymentConfirmed()) == 1) {
-                throw new RuntimeException("\u8d44\u65b9\u6253\u6b3e\u51ed\u8bc1\u5df2\u786e\u8ba4\uff0c\u4e0d\u80fd\u5220\u9664");
+                throw new RuntimeException("资方打款凭证已确认，不能删除");
             }
             return;
         }
-        throw new RuntimeException("\u4e0d\u652f\u6301\u7684\u9644\u4ef6\u7c7b\u578b");
+        throw new RuntimeException("不支持的附件类型");
     }
 
     private void confirmStep(ErpSaleOrderEntity order, String fileType, Long userId, boolean portalMode) {
@@ -1155,7 +1155,7 @@ implements ErpSaleOrderService {
         this.validateConfirmAccess(order, normalizedType, portalMode);
         List files = this.erpSaleOrderFileDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)order.getId())).eq((Object)"file_type", (Object)normalizedType));
         if (files == null || files.isEmpty()) {
-            throw new RuntimeException("\u8bf7\u5148\u4e0a\u4f20\u9644\u4ef6\u540e\u518d\u786e\u8ba4");
+            throw new RuntimeException("请先上传附件后再确认");
         }
         if (FILE_TYPE_SIGNED_CONTRACT.equals(normalizedType)) {
             order.setSignedContractConfirmed(1);
@@ -1166,7 +1166,7 @@ implements ErpSaleOrderService {
         } else if (FILE_TYPE_FUNDER_PAYMENT.equals(normalizedType)) {
             order.setFunderPaymentConfirmed(1);
         } else {
-            throw new RuntimeException("\u4e0d\u652f\u6301\u7684\u786e\u8ba4\u8282\u70b9");
+            throw new RuntimeException("不支持的确认节点");
         }
         order.setUpdateTime(new Date());
         order.setStatus(this.computeStatus(order, files));
@@ -1176,44 +1176,44 @@ implements ErpSaleOrderService {
     private void validateConfirmAccess(ErpSaleOrderEntity order, String fileType, boolean portalMode) {
         if (FILE_TYPE_SIGNED_CONTRACT.equals(fileType)) {
             if (this.defaultFlag(order.getSignedContractConfirmed()) == 1) {
-                throw new RuntimeException("\u76d6\u7ae0\u5408\u540c\u5df2\u786e\u8ba4");
+                throw new RuntimeException("盖章合同已确认");
             }
             return;
         }
         if (FILE_TYPE_BUYER_PAYMENT.equals(fileType)) {
             if (this.defaultFlag(order.getSignedContractConfirmed()) == 0) {
-                throw new RuntimeException("\u8bf7\u5148\u786e\u8ba4\u76d6\u7ae0\u5408\u540c");
+                throw new RuntimeException("请先确认盖章合同");
             }
             if (this.defaultFlag(order.getBuyerPaymentConfirmed()) == 1) {
-                throw new RuntimeException("\u4e8c\u6279\u6253\u6b3e\u51ed\u8bc1\u5df2\u786e\u8ba4");
+                throw new RuntimeException("二批打款凭证已确认");
             }
             return;
         }
         if (FILE_TYPE_BUYER_BANK.equals(fileType)) {
             if (portalMode) {
-                throw new RuntimeException("\u8be5\u8282\u70b9\u4ec5\u652f\u6301\u5185\u90e8\u786e\u8ba4");
+                throw new RuntimeException("该节点仅支持内部确认");
             }
             if (this.defaultFlag(order.getBuyerPaymentConfirmed()) == 0) {
-                throw new RuntimeException("\u8bf7\u5148\u786e\u8ba4\u4e8c\u6279\u6253\u6b3e\u51ed\u8bc1");
+                throw new RuntimeException("请先确认二批打款凭证");
             }
             if (this.defaultFlag(order.getBuyerBankConfirmed()) == 1) {
-                throw new RuntimeException("\u4e8c\u6279\u6765\u6b3e\u6c34\u5355\u5df2\u786e\u8ba4");
+                throw new RuntimeException("二批来款水单已确认");
             }
             return;
         }
         if (FILE_TYPE_FUNDER_PAYMENT.equals(fileType)) {
             if (portalMode) {
-                throw new RuntimeException("\u8be5\u8282\u70b9\u4ec5\u652f\u6301\u5185\u90e8\u786e\u8ba4");
+                throw new RuntimeException("该节点仅支持内部确认");
             }
             if (this.defaultFlag(order.getBuyerBankConfirmed()) == 0) {
-                throw new RuntimeException("\u8bf7\u5148\u786e\u8ba4\u4e8c\u6279\u6765\u6b3e\u6c34\u5355");
+                throw new RuntimeException("请先确认二批来款水单");
             }
             if (this.defaultFlag(order.getFunderPaymentConfirmed()) == 1) {
-                throw new RuntimeException("\u8d44\u65b9\u6253\u6b3e\u51ed\u8bc1\u5df2\u786e\u8ba4");
+                throw new RuntimeException("资方打款凭证已确认");
             }
             return;
         }
-        throw new RuntimeException("\u4e0d\u652f\u6301\u7684\u786e\u8ba4\u8282\u70b9");
+        throw new RuntimeException("不支持的确认节点");
     }
 
     private void resetConfirmFlag(ErpSaleOrderEntity order, String fileType) {
