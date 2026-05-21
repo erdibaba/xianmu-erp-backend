@@ -13,6 +13,21 @@ if ($rows.Count -le 0) {
   throw 'Contract rows cannot be empty'
 }
 
+function Get-VisualTextLength([string]$Text) {
+  if ([string]::IsNullOrWhiteSpace($Text)) {
+    return 0
+  }
+  $length = 0.0
+  foreach ($ch in $Text.ToCharArray()) {
+    if ([int][char]$ch -le 127) {
+      $length += 0.55
+    } else {
+      $length += 1.0
+    }
+  }
+  return [math]::Ceiling($length)
+}
+
 $excel = $null
 $workbook = $null
 
@@ -61,6 +76,19 @@ try {
     $sheet.Cells.Item($rowIndex, 8).Formula = "=J$rowIndex/1.09"
     $sheet.Cells.Item($rowIndex, 9).Formula = "=H$rowIndex*0.09"
     $sheet.Cells.Item($rowIndex, 10).Formula = "=F$rowIndex*G$rowIndex"
+
+    $productCell = $sheet.Cells.Item($rowIndex, 4)
+    $productCell.WrapText = $true
+    $productCell.ShrinkToFit = $false
+    $sheet.Rows.Item($rowIndex).VerticalAlignment = -4160
+    $sheet.Rows.Item($rowIndex).AutoFit() | Out-Null
+
+    $visualLength = Get-VisualTextLength([string]$row.productName)
+    $lineCount = [math]::Max(1, [math]::Ceiling($visualLength / 13.0))
+    $targetHeight = [math]::Max(24, $lineCount * 18)
+    if ($sheet.Rows.Item($rowIndex).RowHeight -lt $targetHeight) {
+      $sheet.Rows.Item($rowIndex).RowHeight = $targetHeight
+    }
   }
 
   $sheet.Cells.Item($totalRow, 5).Formula = ('=SUM(E{0}:E{1})' -f $dataStartRow, $dataEndRow)
