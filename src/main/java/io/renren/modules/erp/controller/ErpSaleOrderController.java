@@ -47,22 +47,34 @@ public class ErpSaleOrderController extends AbstractController {
   @PostMapping("/save")
   @RequiresPermissions("erp:tradeorder:save")
   public R save(@RequestBody ErpSaleOrderEntity order) {
-    erpSaleOrderService.saveOrder(order, getUserId());
-    return R.ok();
+    try {
+      erpSaleOrderService.saveOrder(order, getUserId());
+      return R.ok();
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   @PostMapping("/update")
   @RequiresPermissions("erp:tradeorder:update")
   public R update(@RequestBody ErpSaleOrderEntity order) {
-    erpSaleOrderService.updateOrder(order, getUserId());
-    return R.ok();
+    try {
+      erpSaleOrderService.updateOrder(order, getUserId());
+      return R.ok();
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   @PostMapping("/preview-allocation")
   @RequiresPermissions("erp:tradeorder:save")
   public R previewAllocation(@RequestBody ErpSaleOrderEntity order) {
-    List<ErpSaleOrderItemEntity> list = erpSaleOrderService.previewAllocation(order);
-    return R.ok().put("list", list);
+    try {
+      List<ErpSaleOrderItemEntity> list = erpSaleOrderService.previewAllocation(order);
+      return R.ok().put("list", list);
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   @PostMapping("/delete")
