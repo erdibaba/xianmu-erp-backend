@@ -60,6 +60,27 @@ try {
   $totalRow = $dataEndRow + 1
   $amountRow = $totalRow + 2
   $bottomPartyRow = 16 + ($rows.Count - 1)
+  $feeOffset = $rows.Count - 1
+  $spotFeeHeaderRow = 11 + $feeOffset
+  $spotFeeValueRow = 12 + $feeOffset
+  $futuresFeeHeaderRow = 14 + $feeOffset
+  $futuresFeeValueRow = 15 + $feeOffset
+  $coldStorageFreeDays = 7
+  if ($payload.coldStorageFreeDays -ne $null) {
+    $coldStorageFreeDays = [int]$payload.coldStorageFreeDays
+  }
+  if ($coldStorageFreeDays -le 0) {
+    $coldStorageFreeDays = 7
+  }
+  $coldStorageFeeText = ([string][char]0x51B7) + ([string][char]0x5E93) + ([string][char]0x6536) + ([string][char]0x8D39) + ([string][char]0x6807) + ([string][char]0x51C6)
+  $freeText = ([string][char]0x51CF) + ([string][char]0x514D)
+  $dayText = [string][char]0x5929
+  $insideText = [string][char]0x5185
+  $includeText = [string][char]0x542B
+  $leftParen = [string][char]0xFF08
+  $rightParen = [string][char]0xFF09
+  $coldStorageFreeText = $coldStorageFeeText + "`r`n" + $leftParen + $freeText + $coldStorageFreeDays + $dayText + $rightParen
+  $spotFeeRangeText = ('{0}-30' -f ($coldStorageFreeDays + 1)) + $dayText + $insideText + $leftParen + $includeText + '30' + $dayText + $rightParen
 
   for ($index = 0; $index -lt $rows.Count; $index++) {
     $rowIndex = $dataStartRow + $index
@@ -101,6 +122,11 @@ try {
   $sheet.Cells.Item($totalRow, 6).Formula = ('=SUM(F{0}:F{1})' -f $dataStartRow, $dataEndRow)
   $sheet.Cells.Item($totalRow, 10).Formula = ('=SUM(J{0}:J{1})' -f $dataStartRow, $dataEndRow)
   $sheet.Cells.Item($amountRow, 2).Formula = "=J$totalRow"
+  $sheet.Cells.Item($spotFeeHeaderRow, 3).Value2 = $coldStorageFreeText
+  $sheet.Cells.Item($spotFeeValueRow, 4).Value2 = [int]$coldStorageFreeDays
+  $sheet.Cells.Item($spotFeeHeaderRow, 5).Value2 = $spotFeeRangeText
+  $sheet.Cells.Item($futuresFeeHeaderRow, 3).Value2 = $coldStorageFreeText
+  $sheet.Cells.Item($futuresFeeValueRow, 4).Value2 = [int]$coldStorageFreeDays
   $sheet.Cells.Item($bottomPartyRow, 7).Value2 = ('           ' + ([string][char]0x4E59) + ([string][char]0x65B9) + ':' + [string]$payload.secondaryPartnerName)
 
   $outputDir = Split-Path -Parent $OutputPdf

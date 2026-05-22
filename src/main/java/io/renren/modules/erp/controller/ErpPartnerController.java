@@ -39,6 +39,7 @@ public class ErpPartnerController extends AbstractController {
   @PostMapping("/save")
   @RequiresPermissions("erp:partner:save")
   public R save(@RequestBody ErpPartnerEntity partner) {
+    normalizeColdStorageFreeDays(partner);
     partner.setCreateUserId(getUserId());
     partner.setCreateTime(new Date());
     partner.setUpdateTime(new Date());
@@ -49,6 +50,7 @@ public class ErpPartnerController extends AbstractController {
   @PostMapping("/update")
   @RequiresPermissions("erp:partner:update")
   public R update(@RequestBody ErpPartnerEntity partner) {
+    normalizeColdStorageFreeDays(partner);
     partner.setUpdateTime(new Date());
     erpPartnerService.updateById(partner);
     return R.ok();
@@ -59,5 +61,11 @@ public class ErpPartnerController extends AbstractController {
   public R delete(@RequestBody Long[] ids) {
     erpPartnerService.removeByIds(Arrays.asList(ids));
     return R.ok();
+  }
+
+  private void normalizeColdStorageFreeDays(ErpPartnerEntity partner) {
+    if (partner.getColdStorageFreeDays() == null || partner.getColdStorageFreeDays() <= 0) {
+      partner.setColdStorageFreeDays(7);
+    }
   }
 }

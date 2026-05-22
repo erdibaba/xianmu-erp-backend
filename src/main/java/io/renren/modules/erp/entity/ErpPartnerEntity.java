@@ -17,6 +17,7 @@ public class ErpPartnerEntity implements Serializable {
   private String partnerName;
   private Integer partnerType;
   private String businessRole;
+  private Integer coldStorageFreeDays;
   private String taxNo;
   private String bankName;
   private String bankAccount;

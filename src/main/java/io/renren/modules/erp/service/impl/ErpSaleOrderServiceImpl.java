@@ -547,6 +547,7 @@ implements ErpSaleOrderService {
             payload.put("signDateText", new SimpleDateFormat("yyyy/M/d").format(order.getContractSignDate()));
             payload.put("secondaryPartnerName", this.firstNonBlank(order.getSecondaryPartnerName(), "-"));
             payload.put("contractNo", this.firstNonBlank(order.getContractNo(), order.getOrderNo(), "-"));
+            payload.put("coldStorageFreeDays", this.resolveColdStorageFreeDays(order));
             payload.put("rows", rows);
             Files.write(payloadPath, JSON.toJSONString(payload, SerializerFeature.WriteMapNullValue).getBytes(StandardCharsets.UTF_8));
             this.runContractRenderScript(templateFile, renderScriptFile, payloadPath.toFile(), outputXlsx.toFile(), outputPdf.toFile());
@@ -621,6 +622,17 @@ implements ErpSaleOrderService {
             rowNo++;
         }
         return rows;
+    }
+
+    private int resolveColdStorageFreeDays(ErpSaleOrderEntity order) {
+        if (order == null || order.getSecondaryPartnerId() == null) {
+            return 7;
+        }
+        ErpPartnerEntity partner = (ErpPartnerEntity)this.erpPartnerDao.selectById(order.getSecondaryPartnerId());
+        if (partner == null || partner.getColdStorageFreeDays() == null || partner.getColdStorageFreeDays() <= 0) {
+            return 7;
+        }
+        return partner.getColdStorageFreeDays();
     }
 
     @Transactional(rollbackFor={Exception.class})
