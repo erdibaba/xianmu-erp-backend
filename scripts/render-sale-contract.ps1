@@ -63,8 +63,6 @@ try {
   $feeOffset = $rows.Count - 1
   $spotFeeHeaderRow = 11 + $feeOffset
   $spotFeeValueRow = 12 + $feeOffset
-  $futuresFeeHeaderRow = 14 + $feeOffset
-  $futuresFeeValueRow = 15 + $feeOffset
   $coldStorageFreeDays = 7
   if ($payload.coldStorageFreeDays -ne $null) {
     $coldStorageFreeDays = [int]$payload.coldStorageFreeDays
@@ -125,8 +123,6 @@ try {
   $sheet.Cells.Item($spotFeeHeaderRow, 3).Value2 = $coldStorageFreeText
   $sheet.Cells.Item($spotFeeValueRow, 4).Value2 = [int]$coldStorageFreeDays
   $sheet.Cells.Item($spotFeeHeaderRow, 5).Value2 = $spotFeeRangeText
-  $sheet.Cells.Item($futuresFeeHeaderRow, 3).Value2 = $coldStorageFreeText
-  $sheet.Cells.Item($futuresFeeValueRow, 4).Value2 = [int]$coldStorageFreeDays
   $sheet.Cells.Item($bottomPartyRow, 7).Value2 = ('           ' + ([string][char]0x4E59) + ([string][char]0x65B9) + ':' + [string]$payload.secondaryPartnerName)
 
   $outputDir = Split-Path -Parent $OutputPdf
