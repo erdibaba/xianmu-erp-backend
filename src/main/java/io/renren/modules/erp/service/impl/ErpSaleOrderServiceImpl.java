@@ -1311,8 +1311,19 @@ implements ErpSaleOrderService {
         if (receipt == null) {
             throw new RuntimeException("请先上传并保存出库回单");
         }
-        if (this.defaultFlag(receipt.getMatched()) != 1) {
-            throw new RuntimeException(StringUtils.defaultIfEmpty((String)receipt.getMatchMessage(), (String)"出库回单发货数与销售单箱数不一致，请核对"));
+        int saleTotalBoxes = this.calcSaleTotalBoxes(saleOrderId);
+        int shippedTotalBoxes = this.calcOutboundShippedBoxes(receipt.getItemList());
+        boolean matched = saleTotalBoxes == shippedTotalBoxes;
+        if (!matched) {
+            throw new RuntimeException("销售单箱数" + saleTotalBoxes + "箱，出库回单发货数" + shippedTotalBoxes + "箱，请核对");
+        }
+        if (this.defaultInt(receipt.getSaleTotalBoxes()) != saleTotalBoxes || this.defaultInt(receipt.getShippedTotalBoxes()) != shippedTotalBoxes || this.defaultFlag(receipt.getMatched()) != 1) {
+            receipt.setSaleTotalBoxes(saleTotalBoxes);
+            receipt.setShippedTotalBoxes(shippedTotalBoxes);
+            receipt.setMatched(1);
+            receipt.setMatchMessage("销售单箱数与出库回单发货数一致");
+            receipt.setUpdateTime(new Date());
+            this.erpSaleOutboundReceiptDao.updateById(receipt);
         }
     }
 
