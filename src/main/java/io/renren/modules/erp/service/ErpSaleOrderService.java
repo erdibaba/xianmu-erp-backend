@@ -4,6 +4,7 @@ import io.renren.common.utils.PageUtils;
 import io.renren.modules.erp.entity.ErpSaleOrderFileEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
 import java.util.List;
@@ -35,6 +36,10 @@ public interface ErpSaleOrderService {
   List<ErpSaleOrderFileEntity> uploadFiles(Long saleOrderId, String fileType, MultipartFile[] files) throws Exception;
 
   List<ErpSaleOrderFileEntity> uploadFiles(Long saleOrderId, String fileType, MultipartFile[] files, Long userId) throws Exception;
+
+  ErpSaleOutboundReceiptEntity recognizeOutboundReceipt(Long saleOrderId, MultipartFile[] files, Long userId) throws Exception;
+
+  ErpSaleOutboundReceiptEntity saveOutboundReceipt(ErpSaleOutboundReceiptEntity receipt, Long userId);
 
   ResponseEntity<byte[]> downloadFile(Long fileId);
 

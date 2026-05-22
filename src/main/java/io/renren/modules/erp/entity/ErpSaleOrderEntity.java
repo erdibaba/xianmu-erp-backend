@@ -35,6 +35,7 @@ public class ErpSaleOrderEntity implements Serializable {
   private Long sourcePresaleOrderId;
   private String sourcePresaleOrderNo;
   private Integer presaleLinkConfirmed;
+  private Integer outboundReceiptConfirmed;
   private String remark;
   private Long createUserId;
   private Date createTime;
@@ -66,5 +67,14 @@ public class ErpSaleOrderEntity implements Serializable {
 
   @TableField(exist = false)
   private Integer funderPaymentUploaded;
+
+  @TableField(exist = false)
+  private Integer outboundReceiptUploaded;
+
+  @TableField(exist = false)
+  private Integer outboundAttachmentUploaded;
+
+  @TableField(exist = false)
+  private ErpSaleOutboundReceiptEntity outboundReceipt;
 
 }

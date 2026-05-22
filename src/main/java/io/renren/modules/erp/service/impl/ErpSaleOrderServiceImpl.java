@@ -19,6 +19,8 @@
 package io.renren.modules.erp.service.impl;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -35,6 +37,8 @@ import io.renren.modules.erp.dao.ErpProductDao;
 import io.renren.modules.erp.dao.ErpSaleOrderDao;
 import io.renren.modules.erp.dao.ErpSaleOrderFileDao;
 import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundReceiptDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundReceiptItemDao;
 import io.renren.modules.erp.dao.ErpStockLedgerDao;
 import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
@@ -46,6 +50,8 @@ import io.renren.modules.erp.entity.ErpProductEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderFileEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
@@ -53,8 +59,10 @@ import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
 import io.renren.modules.sys.entity.SysUserEntity;
 import io.renren.modules.sys.service.SysUserService;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -79,6 +87,7 @@ import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -97,6 +106,8 @@ implements ErpSaleOrderService {
     private static final String FILE_TYPE_BUYER_PAYMENT = "BUYER_PAYMENT_PROOF";
     private static final String FILE_TYPE_BUYER_BANK = "BUYER_BANK_SLIP";
     private static final String FILE_TYPE_FUNDER_PAYMENT = "FUNDER_PAYMENT_PROOF";
+    private static final String FILE_TYPE_OUTBOUND_RECEIPT = "OUTBOUND_RECEIPT";
+    private static final String FILE_TYPE_OUTBOUND_ATTACHMENT = "OUTBOUND_ATTACHMENT";
     private static final String CONTRACT_BASE_URL = "http://192.168.0.36:8080/renren-fast/erp/saleorder/contract/";
     private static final String PORTAL_BASE_URL = "http://192.168.0.36:8001/#/sale-upload/";
     private static final String UPLOAD_BASE_DIR = "D:\\renren-fast-vue\\renren-fast\\uploads\\saleorder";
@@ -106,6 +117,10 @@ implements ErpSaleOrderService {
     private ErpSaleOrderItemDao erpSaleOrderItemDao;
     @Autowired
     private ErpSaleOrderFileDao erpSaleOrderFileDao;
+    @Autowired
+    private ErpSaleOutboundReceiptDao erpSaleOutboundReceiptDao;
+    @Autowired
+    private ErpSaleOutboundReceiptItemDao erpSaleOutboundReceiptItemDao;
     @Autowired
     private ErpPartnerDao erpPartnerDao;
     @Autowired
@@ -348,6 +363,41 @@ implements ErpSaleOrderService {
     @Transactional(rollbackFor={Exception.class})
     public List<ErpSaleOrderFileEntity> uploadFiles(Long saleOrderId, String fileType, MultipartFile[] files, Long userId) throws Exception {
         return this.doUploadFiles(saleOrderId, fileType, files, userId, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor={Exception.class})
+    public ErpSaleOutboundReceiptEntity recognizeOutboundReceipt(Long saleOrderId, MultipartFile[] files, Long userId) throws Exception {
+        if (files == null || files.length == 0) {
+            throw new RuntimeException("请先选择出库回单文件");
+        }
+        int previousMaxLineNo = this.nextFileLineNo(saleOrderId, FILE_TYPE_OUTBOUND_RECEIPT) - 1;
+        List<ErpSaleOrderFileEntity> allFiles = this.doUploadFiles(saleOrderId, FILE_TYPE_OUTBOUND_RECEIPT, files, userId, false);
+        List<ErpSaleOrderFileEntity> currentFiles = new ArrayList<ErpSaleOrderFileEntity>();
+        for (ErpSaleOrderFileEntity file : allFiles) {
+            if (file != null && this.defaultInt(file.getLineNo()) > previousMaxLineNo) {
+                currentFiles.add(file);
+            }
+        }
+        JSONObject recognized = this.runOutboundReceiptOcr(currentFiles);
+        ErpSaleOutboundReceiptEntity receipt = this.buildOutboundReceiptFromOcr(saleOrderId, recognized);
+        return this.upsertOutboundReceipt(receipt, userId);
+    }
+
+    @Override
+    @Transactional(rollbackFor={Exception.class})
+    public ErpSaleOutboundReceiptEntity saveOutboundReceipt(ErpSaleOutboundReceiptEntity receipt, Long userId) {
+        if (receipt == null || receipt.getSaleOrderId() == null) {
+            throw new RuntimeException("出库回单数据不能为空");
+        }
+        ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(receipt.getSaleOrderId());
+        if (order == null) {
+            throw new RuntimeException("销售单不存在");
+        }
+        if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
+            throw new RuntimeException("出库回单已确认，不能修改");
+        }
+        return this.upsertOutboundReceipt(receipt, userId);
     }
 
     private List<ErpSaleOrderFileEntity> doUploadFiles(Long saleOrderId, String fileType, MultipartFile[] files, Long userId, boolean portalMode) throws Exception {
@@ -682,6 +732,7 @@ implements ErpSaleOrderService {
             order.setBuyerBankConfirmed(0);
             order.setFunderPaymentConfirmed(0);
             order.setPresaleLinkConfirmed(0);
+            order.setOutboundReceiptConfirmed(0);
         } else {
             order.setCreateUserId(existing.getCreateUserId());
             order.setCreateTime(existing.getCreateTime());
@@ -699,6 +750,7 @@ implements ErpSaleOrderService {
             order.setBuyerBankConfirmed(this.defaultFlag(existing.getBuyerBankConfirmed()));
             order.setFunderPaymentConfirmed(this.defaultFlag(existing.getFunderPaymentConfirmed()));
             order.setPresaleLinkConfirmed(this.defaultFlag(existing.getPresaleLinkConfirmed()));
+            order.setOutboundReceiptConfirmed(this.defaultFlag(existing.getOutboundReceiptConfirmed()));
         }
         order.setUpdateTime(now);
     }
@@ -1047,6 +1099,223 @@ implements ErpSaleOrderService {
         return item.getSpecWeight().multiply(BigDecimal.valueOf(item.getBoxes().intValue())).setScale(2, RoundingMode.HALF_UP);
     }
 
+    private JSONObject runOutboundReceiptOcr(List<ErpSaleOrderFileEntity> files) throws Exception {
+        if (files == null || files.isEmpty()) {
+            throw new RuntimeException("请先上传出库回单文件");
+        }
+        Path listFile = Files.createTempFile("erp-outbound-paths-", ".txt", new FileAttribute[0]);
+        try {
+            List<String> pathLines = new ArrayList<String>();
+            for (ErpSaleOrderFileEntity file : files) {
+                if (file != null && StringUtils.isNotBlank((String)file.getFilePath())) {
+                    pathLines.add(file.getFilePath());
+                }
+            }
+            if (pathLines.isEmpty()) {
+                throw new RuntimeException("出库回单文件路径为空");
+            }
+            Files.write(listFile, pathLines, StandardCharsets.UTF_8);
+            File scriptFile = this.ensureOutboundOcrScriptFile();
+            ProcessBuilder processBuilder = new ProcessBuilder(new String[]{"python", "-X", "utf8", scriptFile.getAbsolutePath(), listFile.toAbsolutePath().toString()});
+            processBuilder.environment().put("PYTHONIOENCODING", "UTF-8");
+            processBuilder.redirectErrorStream(true);
+            Process process = processBuilder.start();
+            String output;
+            try (InputStream inputStream = process.getInputStream();
+                 ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+                byte[] bytes = new byte[4096];
+                int len;
+                while ((len = inputStream.read(bytes)) != -1) {
+                    buffer.write(bytes, 0, len);
+                }
+                output = new String(buffer.toByteArray(), StandardCharsets.UTF_8).trim();
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new RuntimeException("出库回单OCR识别失败: " + output);
+            }
+            JSONObject result = JSON.parseObject(output);
+            if (result == null || result.getJSONObject("receipt") == null) {
+                throw new RuntimeException("出库回单OCR结果为空");
+            }
+            return result;
+        }
+        finally {
+            Files.deleteIfExists(listFile);
+        }
+    }
+
+    private File ensureOutboundOcrScriptFile() throws Exception {
+        File target = new File(System.getProperty("java.io.tmpdir"), "erp_outbound_ocr.py");
+        this.copyClasspathOcrScript("ocr/erp_outbound_ocr.py", target);
+        this.copyClasspathOcrScript("ocr/erp_ocr.py", new File(System.getProperty("java.io.tmpdir"), "erp_ocr.py"));
+        return target;
+    }
+
+    private void copyClasspathOcrScript(String resourcePath, File target) throws Exception {
+        ClassPathResource resource = new ClassPathResource(resourcePath);
+        try (InputStream inputStream = resource.getInputStream()) {
+            Files.copy(inputStream, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private ErpSaleOutboundReceiptEntity buildOutboundReceiptFromOcr(Long saleOrderId, JSONObject recognized) {
+        JSONObject receiptJson = recognized.getJSONObject("receipt");
+        ErpSaleOutboundReceiptEntity receipt = new ErpSaleOutboundReceiptEntity();
+        receipt.setSaleOrderId(saleOrderId);
+        receipt.setWmsOrderNo(StringUtils.trimToEmpty((String)receiptJson.getString("wmsOrderNo")));
+        receipt.setOutboundOrderNo(StringUtils.trimToEmpty((String)receiptJson.getString("outboundOrderNo")));
+        receipt.setCustomerCode(StringUtils.trimToEmpty((String)receiptJson.getString("customerCode")));
+        receipt.setCustomerName(StringUtils.trimToEmpty((String)receiptJson.getString("customerName")));
+        receipt.setRawText(recognized.getString("rawText"));
+        JSONArray itemArray = receiptJson.getJSONArray("itemList");
+        ArrayList<ErpSaleOutboundReceiptItemEntity> items = new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+        if (itemArray != null) {
+            int lineNo = 1;
+            for (int i = 0; i < itemArray.size(); i++) {
+                JSONObject itemJson = itemArray.getJSONObject(i);
+                ErpSaleOutboundReceiptItemEntity item = new ErpSaleOutboundReceiptItemEntity();
+                item.setLineNo(lineNo++);
+                item.setSaleOrderId(saleOrderId);
+                item.setRecognizedProductCode(StringUtils.trimToEmpty((String)itemJson.getString("recognizedProductCode")));
+                item.setProductSpec(StringUtils.trimToEmpty((String)itemJson.getString("productSpec")));
+                item.setUnit(StringUtils.trimToEmpty((String)itemJson.getString("unit")));
+                item.setOrderQty(itemJson.getInteger("orderQty"));
+                item.setShippedQty(itemJson.getInteger("shippedQty"));
+                item.setContainerNo(StringUtils.trimToEmpty((String)itemJson.getString("containerNo")));
+                item.setFactoryNo(StringUtils.trimToEmpty((String)itemJson.getString("factoryNo")));
+                item.setAvgWeight(itemJson.getBigDecimal("avgWeight"));
+                item.setTotalWeight(itemJson.getBigDecimal("totalWeight"));
+                String recognizedName = StringUtils.trimToEmpty((String)itemJson.getString("recognizedProductName"));
+                this.enrichOutboundReceiptItemProduct(item, recognizedName);
+                items.add(item);
+            }
+        }
+        receipt.setItemList(items);
+        return receipt;
+    }
+
+    private ErpSaleOutboundReceiptEntity upsertOutboundReceipt(ErpSaleOutboundReceiptEntity receipt, Long userId) {
+        ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(receipt.getSaleOrderId());
+        if (order == null) {
+            throw new RuntimeException("销售单不存在");
+        }
+        if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
+            throw new RuntimeException("出库回单已确认，不能修改");
+        }
+        Date now = new Date();
+        ErpSaleOutboundReceiptEntity existing = this.erpSaleOutboundReceiptDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)receipt.getSaleOrderId())).last("limit 1"));
+        receipt.setSaleTotalBoxes(this.calcSaleTotalBoxes(receipt.getSaleOrderId()));
+        receipt.setShippedTotalBoxes(this.calcOutboundShippedBoxes(receipt.getItemList()));
+        boolean matched = this.defaultInt(receipt.getSaleTotalBoxes()) == this.defaultInt(receipt.getShippedTotalBoxes());
+        receipt.setMatched(matched ? 1 : 0);
+        receipt.setMatchMessage(matched ? "销售单箱数与出库回单发货数一致" : "销售单箱数" + this.defaultInt(receipt.getSaleTotalBoxes()) + "箱，出库回单发货数" + this.defaultInt(receipt.getShippedTotalBoxes()) + "箱，请核对");
+        receipt.setUpdateTime(now);
+        if (existing == null) {
+            receipt.setCreateTime(now);
+            this.erpSaleOutboundReceiptDao.insert(receipt);
+        } else {
+            receipt.setId(existing.getId());
+            receipt.setCreateTime(existing.getCreateTime());
+            this.erpSaleOutboundReceiptDao.updateById(receipt);
+            this.erpSaleOutboundReceiptItemDao.delete((Wrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)existing.getId()));
+        }
+        int lineNo = 1;
+        for (ErpSaleOutboundReceiptItemEntity item : receipt.getItemList()) {
+            if (item == null) continue;
+            item.setId(null);
+            item.setReceiptId(receipt.getId());
+            item.setSaleOrderId(receipt.getSaleOrderId());
+            item.setLineNo(lineNo++);
+            item.setCreateTime(now);
+            item.setUpdateTime(now);
+            this.enrichOutboundReceiptItemProduct(item, item.getProductName());
+            this.erpSaleOutboundReceiptItemDao.insert(item);
+        }
+        return this.loadOutboundReceipt(receipt.getSaleOrderId());
+    }
+
+    private ErpSaleOutboundReceiptEntity loadOutboundReceipt(Long saleOrderId) {
+        if (saleOrderId == null) {
+            return null;
+        }
+        ErpSaleOutboundReceiptEntity receipt = this.erpSaleOutboundReceiptDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)saleOrderId)).last("limit 1"));
+        if (receipt == null) {
+            return null;
+        }
+        List items = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)receipt.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
+        receipt.setItemList(items);
+        return receipt;
+    }
+
+    private void enrichOutboundReceiptItemProduct(ErpSaleOutboundReceiptItemEntity item, String fallbackName) {
+        if (item == null) {
+            return;
+        }
+        ErpProductEntity product = null;
+        if (item.getProductId() != null) {
+            product = (ErpProductEntity)this.erpProductDao.selectById(item.getProductId());
+        }
+        if (product == null) {
+            String mainCode = this.normalizeMainProductCode(this.firstNonBlank(item.getRecognizedProductCode(), item.getProductCode()));
+            if (StringUtils.isNotBlank((String)mainCode)) {
+                product = (ErpProductEntity)this.erpProductDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"product_code", (Object)mainCode)).last("limit 1"));
+            }
+        }
+        if (product != null) {
+            item.setProductId(product.getId());
+            item.setProductCode(product.getProductCode());
+            item.setProductName(product.getProductName());
+            item.setProductNameEn(product.getProductNameEn());
+            if (StringUtils.isBlank((String)item.getProductSpec())) {
+                item.setProductSpec(product.getProductSpec());
+            }
+            if (StringUtils.isBlank((String)item.getUnit())) {
+                item.setUnit(product.getUnit());
+            }
+        } else if (StringUtils.isBlank((String)item.getProductName())) {
+            item.setProductName(StringUtils.trimToEmpty((String)fallbackName));
+        }
+    }
+
+    private String normalizeMainProductCode(String value) {
+        if (StringUtils.isBlank((String)value)) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = Pattern.compile("(\\d{5})").matcher(value);
+        return matcher.find() ? matcher.group(1) : StringUtils.trimToEmpty((String)value);
+    }
+
+    private int calcSaleTotalBoxes(Long saleOrderId) {
+        List<ErpSaleOrderItemEntity> items = this.erpSaleOrderItemDao.selectList((Wrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)saleOrderId));
+        int total = 0;
+        for (ErpSaleOrderItemEntity item : items) {
+            total += this.defaultInt(item.getBoxes());
+        }
+        return total;
+    }
+
+    private int calcOutboundShippedBoxes(List<ErpSaleOutboundReceiptItemEntity> items) {
+        int total = 0;
+        if (items == null) {
+            return total;
+        }
+        for (ErpSaleOutboundReceiptItemEntity item : items) {
+            total += item == null ? 0 : this.defaultInt(item.getShippedQty());
+        }
+        return total;
+    }
+
+    private void validateOutboundReceiptMatched(Long saleOrderId) {
+        ErpSaleOutboundReceiptEntity receipt = this.loadOutboundReceipt(saleOrderId);
+        if (receipt == null) {
+            throw new RuntimeException("请先上传并保存出库回单");
+        }
+        if (this.defaultFlag(receipt.getMatched()) != 1) {
+            throw new RuntimeException(StringUtils.defaultIfEmpty((String)receipt.getMatchMessage(), (String)"出库回单发货数与销售单箱数不一致，请核对"));
+        }
+    }
+
     private void loadChildren(ErpSaleOrderEntity order) {
         List items = this.erpSaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)order.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
         List files = this.erpSaleOrderFileDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)order.getId())).orderByAsc((Object[])new String[]{"file_type", "line_no", "id"}));
@@ -1063,6 +1332,7 @@ implements ErpSaleOrderService {
             }
         }
         order.setFileList(files);
+        order.setOutboundReceipt(this.loadOutboundReceipt(order.getId()));
     }
 
     private List<ErpSaleOrderItemEntity> buildSpotRequestItems(List<ErpSaleOrderItemEntity> items) {
@@ -1093,6 +1363,8 @@ implements ErpSaleOrderService {
         order.setBuyerPaymentUploaded(this.hasFileType(files, FILE_TYPE_BUYER_PAYMENT) ? 1 : 0);
         order.setBuyerBankSlipUploaded(this.hasFileType(files, FILE_TYPE_BUYER_BANK) ? 1 : 0);
         order.setFunderPaymentUploaded(this.hasFileType(files, FILE_TYPE_FUNDER_PAYMENT) ? 1 : 0);
+        order.setOutboundReceiptUploaded(this.hasFileType(files, FILE_TYPE_OUTBOUND_RECEIPT) ? 1 : 0);
+        order.setOutboundAttachmentUploaded(this.hasFileType(files, FILE_TYPE_OUTBOUND_ATTACHMENT) ? 1 : 0);
         order.setStatus(this.computeStatus(order, files));
         order.setContractUrl(CONTRACT_BASE_URL + order.getContractToken());
         order.setBuyerPortalUrl(PORTAL_BASE_URL + order.getContractToken());
@@ -1111,7 +1383,10 @@ implements ErpSaleOrderService {
         if (this.defaultFlag(order.getFunderPaymentConfirmed()) == 0) {
             return 4;
         }
-        return 5;
+        if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 0) {
+            return 5;
+        }
+        return 6;
     }
 
     private boolean hasFileType(List<ErpSaleOrderFileEntity> files, String fileType) {
@@ -1206,6 +1481,21 @@ implements ErpSaleOrderService {
             }
             return;
         }
+        if (FILE_TYPE_OUTBOUND_RECEIPT.equals(normalizedType)) {
+            if (portalMode) {
+                throw new RuntimeException("出库回单仅支持内部人员上传");
+            }
+            if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
+                throw new RuntimeException("出库回单已确认，不能重复上传");
+            }
+            return;
+        }
+        if (FILE_TYPE_OUTBOUND_ATTACHMENT.equals(normalizedType)) {
+            if (portalMode) {
+                throw new RuntimeException("出库附件仅支持内部人员上传");
+            }
+            return;
+        }
         throw new RuntimeException("不支持的附件类型");
     }
 
@@ -1241,6 +1531,21 @@ implements ErpSaleOrderService {
             }
             return;
         }
+        if (FILE_TYPE_OUTBOUND_RECEIPT.equals(normalizedType)) {
+            if (portalMode) {
+                throw new RuntimeException("出库回单仅支持内部删除");
+            }
+            if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
+                throw new RuntimeException("出库回单已确认，不能删除");
+            }
+            return;
+        }
+        if (FILE_TYPE_OUTBOUND_ATTACHMENT.equals(normalizedType)) {
+            if (portalMode) {
+                throw new RuntimeException("出库附件仅支持内部删除");
+            }
+            return;
+        }
         throw new RuntimeException("不支持的附件类型");
     }
 
@@ -1259,6 +1564,9 @@ implements ErpSaleOrderService {
             order.setBuyerBankConfirmed(1);
         } else if (FILE_TYPE_FUNDER_PAYMENT.equals(normalizedType)) {
             order.setFunderPaymentConfirmed(1);
+        } else if (FILE_TYPE_OUTBOUND_RECEIPT.equals(normalizedType)) {
+            this.validateOutboundReceiptMatched(order.getId());
+            order.setOutboundReceiptConfirmed(1);
         } else {
             throw new RuntimeException("不支持的确认节点");
         }
@@ -1307,6 +1615,15 @@ implements ErpSaleOrderService {
             }
             return;
         }
+        if (FILE_TYPE_OUTBOUND_RECEIPT.equals(fileType)) {
+            if (portalMode) {
+                throw new RuntimeException("出库回单仅支持内部确认");
+            }
+            if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
+                throw new RuntimeException("出库回单已确认");
+            }
+            return;
+        }
         throw new RuntimeException("不支持的确认节点");
     }
 
@@ -1324,6 +1641,9 @@ implements ErpSaleOrderService {
             changed = true;
         } else if (FILE_TYPE_FUNDER_PAYMENT.equals(normalizedType) && this.defaultFlag(order.getFunderPaymentConfirmed()) != 0) {
             order.setFunderPaymentConfirmed(0);
+            changed = true;
+        } else if (FILE_TYPE_OUTBOUND_RECEIPT.equals(normalizedType) && this.defaultFlag(order.getOutboundReceiptConfirmed()) != 0) {
+            order.setOutboundReceiptConfirmed(0);
             changed = true;
         }
         if (changed) {

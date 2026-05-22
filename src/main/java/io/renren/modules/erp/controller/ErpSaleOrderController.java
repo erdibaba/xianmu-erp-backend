@@ -4,6 +4,7 @@ import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.R;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
@@ -139,6 +140,33 @@ public class ErpSaleOrderController extends AbstractController {
       return R.error("请先选择文件");
     }
     return R.ok().put("list", erpSaleOrderService.uploadFiles(saleOrderId, fileType, files, getUserId()));
+  }
+
+  @PostMapping("/outbound/receipt/recognize")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R recognizeOutboundReceipt(@RequestParam("saleOrderId") Long saleOrderId,
+                                    @RequestParam("files") MultipartFile[] files) throws Exception {
+    if (saleOrderId == null || saleOrderId <= 0) {
+      return R.error("请先保存销售单");
+    }
+    if (files == null || files.length == 0) {
+      return R.error("请先选择出库回单文件");
+    }
+    try {
+      return R.ok().put("receipt", erpSaleOrderService.recognizeOutboundReceipt(saleOrderId, files, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @PostMapping("/outbound/receipt/save")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R saveOutboundReceipt(@RequestBody ErpSaleOutboundReceiptEntity receipt) {
+    try {
+      return R.ok().put("receipt", erpSaleOrderService.saveOutboundReceipt(receipt, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   @PostMapping("/confirm")

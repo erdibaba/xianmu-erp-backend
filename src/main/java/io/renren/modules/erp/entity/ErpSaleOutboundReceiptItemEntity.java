@@ -1,0 +1,35 @@
+package io.renren.modules.erp.entity;
+
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.util.Date;
+import lombok.Data;
+
+@Data
+@TableName("erp_sale_outbound_receipt_item")
+public class ErpSaleOutboundReceiptItemEntity implements Serializable {
+  private static final long serialVersionUID = 1L;
+
+  @TableId
+  private Long id;
+  private Long receiptId;
+  private Long saleOrderId;
+  private Integer lineNo;
+  private Long productId;
+  private String productCode;
+  private String recognizedProductCode;
+  private String productName;
+  private String productNameEn;
+  private String productSpec;
+  private String unit;
+  private Integer orderQty;
+  private Integer shippedQty;
+  private String containerNo;
+  private String factoryNo;
+  private BigDecimal avgWeight;
+  private BigDecimal totalWeight;
+  private Date createTime;
+  private Date updateTime;
+}
