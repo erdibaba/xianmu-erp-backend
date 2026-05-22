@@ -180,8 +180,12 @@ public class ErpSaleOrderController extends AbstractController {
     if (StringUtils.isBlank(fileType)) {
       return R.error("请先指定确认节点");
     }
-    erpSaleOrderService.confirmInternalStep(saleOrderId, fileType, getUserId());
-    return R.ok();
+    try {
+      erpSaleOrderService.confirmInternalStep(saleOrderId, fileType, getUserId());
+      return R.ok();
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   @GetMapping("/download/file/{fileId}")
