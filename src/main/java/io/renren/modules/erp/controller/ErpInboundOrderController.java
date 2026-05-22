@@ -6,6 +6,7 @@ import io.renren.modules.erp.entity.ErpInboundOrderEntity;
 import io.renren.modules.erp.service.ErpInboundOrderService;
 import io.renren.modules.erp.vo.ErpRecognizedInboundResultVo;
 import io.renren.modules.sys.controller.AbstractController;
+import java.math.BigDecimal;
 import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
@@ -44,6 +45,17 @@ public class ErpInboundOrderController extends AbstractController {
   @RequiresPermissions("erp:tradeorder:update")
   public R update(@RequestBody ErpInboundOrderEntity order) {
     erpInboundOrderService.updateOrder(order, getUserId());
+    return R.ok();
+  }
+
+  @PostMapping("/item/damage")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R saveItemDamage(@RequestBody Map<String, Object> params) {
+    Long itemId = params.get("itemId") == null ? null : Long.valueOf(String.valueOf(params.get("itemId")));
+    BigDecimal damageWeightKg = params.get("damageWeightKg") == null || StringUtils.isBlank(String.valueOf(params.get("damageWeightKg")))
+        ? null : new BigDecimal(String.valueOf(params.get("damageWeightKg")));
+    String damageReason = params.get("damageReason") == null ? null : String.valueOf(params.get("damageReason"));
+    erpInboundOrderService.saveItemDamage(itemId, damageWeightKg, damageReason);
     return R.ok();
   }
 

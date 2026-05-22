@@ -16,6 +16,8 @@ public interface ErpInboundOrderService {
 
   void updateOrder(ErpInboundOrderEntity order, Long userId);
 
+  void saveItemDamage(Long itemId, java.math.BigDecimal damageWeightKg, String damageReason);
+
   ErpRecognizedInboundResultVo recognize(Long presaleOrderId, MultipartFile[] files) throws Exception;
 
   ResponseEntity<byte[]> downloadFile(Long fileId);

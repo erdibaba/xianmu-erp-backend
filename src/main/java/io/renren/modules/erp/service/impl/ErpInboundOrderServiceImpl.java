@@ -124,6 +124,29 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   }
 
   @Override
+  @Transactional(rollbackFor = Exception.class)
+  public void saveItemDamage(Long itemId, BigDecimal damageWeightKg, String damageReason) {
+    if (itemId == null || itemId <= 0) {
+      throw new RuntimeException("入库明细不能为空");
+    }
+    ErpInboundOrderItemEntity item = erpInboundOrderItemDao.selectById(itemId);
+    if (item == null) {
+      throw new RuntimeException("入库明细不存在");
+    }
+    if (damageWeightKg != null && damageWeightKg.compareTo(BigDecimal.ZERO) < 0) {
+      throw new RuntimeException("报损重量不能小于0");
+    }
+    String reason = StringUtils.trimToEmpty(damageReason);
+    if (reason.length() > 200) {
+      throw new RuntimeException("报损原因最多200字");
+    }
+    item.setDamageWeightKg(damageWeightKg == null ? null : damageWeightKg.setScale(2, RoundingMode.HALF_UP));
+    item.setDamageReason(StringUtils.isBlank(reason) ? null : reason);
+    item.setUpdateTime(new Date());
+    erpInboundOrderItemDao.updateById(item);
+  }
+
+  @Override
   public ErpRecognizedInboundResultVo recognize(Long presaleOrderId, MultipartFile[] files) throws Exception {
     if (files == null || files.length == 0) {
       throw new RuntimeException("请先上传入库单文件");

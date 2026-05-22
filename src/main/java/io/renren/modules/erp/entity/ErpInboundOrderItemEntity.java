@@ -26,6 +26,8 @@ public class ErpInboundOrderItemEntity implements Serializable {
   private Integer expectedQty;
   private Integer actualQty;
   private Integer packingBoxes;
+  private BigDecimal damageWeightKg;
+  private String damageReason;
   private String temperatureZone;
   private Date productionDate;
   private Date expiryDate;
