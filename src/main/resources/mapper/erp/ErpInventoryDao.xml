@@ -131,17 +131,25 @@
       pi.product_name_en AS productNameEn,
       COALESCE(pi.total_boxes, 0) AS futuresBoxes,
       COALESCE(sold.sold_boxes, 0) AS futuresSoldBoxes,
-      GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0) - COALESCE(inbound.transferred_boxes, 0), 0) AS futuresAvailableBoxes,
-      COALESCE(inbound.transferred_boxes, 0) AS transferredSpotBoxes,
-      COALESCE(pi.total_boxes, 0) - COALESCE(inbound.transferred_boxes, 0) AS notInboundBoxes,
+      CASE
+        WHEN COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0) AND COALESCE(pi.total_boxes, 0) &gt; 0 THEN 0
+        ELSE GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0), 0)
+      END AS futuresAvailableBoxes,
+      CASE
+        WHEN COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0) AND COALESCE(pi.total_boxes, 0) &gt; 0 THEN COALESCE(inbound.transferred_boxes, 0)
+        ELSE 0
+      END AS transferredSpotBoxes,
+      CASE
+        WHEN COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0) AND COALESCE(pi.total_boxes, 0) &gt; 0 THEN 0
+        ELSE COALESCE(pi.total_boxes, 0)
+      END AS notInboundBoxes,
       COALESCE(pi.total_weight, 0) AS totalWeightKg,
       COALESCE(pi.shelf_life_days, pp.shelf_life_days) AS shelfLifeDays,
       batch.production_date AS productionDate,
       batch.expiry_date AS expiryDate,
       CASE
         WHEN COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0) AND COALESCE(pi.total_boxes, 0) &gt; 0 THEN '已转现货'
-        WHEN COALESCE(inbound.transferred_boxes, 0) &gt; 0 THEN '部分入库'
-        ELSE '未入库'
+        ELSE '未转现货'
       END AS transferStatus,
       COALESCE(p.freshness_warning_days, 0) AS freshnessWarningDays,
       CASE
@@ -188,7 +196,10 @@
       AND COALESCE(pp.container_no, pc.container_no) LIKE CONCAT('%', #{containerNo}, '%')
     </if>
     <if test="onlyAvailable != null and onlyAvailable == 1">
-      AND GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0) - COALESCE(inbound.transferred_boxes, 0), 0) &gt; 0
+      AND CASE
+        WHEN COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0) AND COALESCE(pi.total_boxes, 0) &gt; 0 THEN 0
+        ELSE GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0), 0)
+      END &gt; 0
     </if>
     ORDER BY COALESCE(pc.expected_arrival_date, po.expected_date) ASC, COALESCE(pp.contract_no, pc.contract_no, po.seller_contract_no, po.order_no) ASC, pi.product_code ASC
   </select>
