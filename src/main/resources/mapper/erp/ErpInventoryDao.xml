@@ -309,8 +309,8 @@
     WHERE 1 = 1
     <if test="keyword != null and keyword != ''">
       AND (
-        t.product_code LIKE CONCAT('%', #{keyword}, '%')
-        OR t.product_name LIKE CONCAT('%', #{keyword}, '%')
+        t.productCode LIKE CONCAT('%', #{keyword}, '%')
+        OR t.productName LIKE CONCAT('%', #{keyword}, '%')
         OR t.productNameEn LIKE CONCAT('%', #{keyword}, '%')
         OR t.orderNo LIKE CONCAT('%', #{keyword}, '%')
         OR t.customerName LIKE CONCAT('%', #{keyword}, '%')
