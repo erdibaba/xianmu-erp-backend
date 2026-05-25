@@ -30,6 +30,8 @@ public class ErpFuturesInventoryVo implements Serializable {
   private Integer transferredSpotBoxes;
   private Integer notInboundBoxes;
   private BigDecimal totalWeightKg;
+  private BigDecimal soldWeightKg;
+  private BigDecimal availableWeightKg;
   private Integer shelfLifeDays;
   private Date productionDate;
   private Date expiryDate;

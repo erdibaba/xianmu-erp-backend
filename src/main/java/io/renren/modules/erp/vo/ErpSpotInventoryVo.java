@@ -35,6 +35,7 @@ public class ErpSpotInventoryVo implements Serializable {
   private Integer availableBoxes;
   private BigDecimal specWeight;
   private BigDecimal inboundWeightKg;
+  private BigDecimal allocatedWeightKg;
   private BigDecimal availableWeightKg;
   private BigDecimal damageWeightKg;
   private Integer freshnessWarningDays;

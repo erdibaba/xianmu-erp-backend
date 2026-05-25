@@ -44,21 +44,26 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
 
   @Override
   public List<ErpInventoryBatchVo> querySpotBatches(Map<String, Object> params) {
-    Long presaleOrderId = getLong(params, "presaleOrderId");
     Long productId = getLong(params, "productId");
-    if (presaleOrderId == null || productId == null) {
+    if (productId == null) {
       throw new RuntimeException("缺少库存批次查询条件");
     }
-    return erpInventoryDao.querySpotBatches(presaleOrderId, productId);
+    String warehouseName = getString(params, "warehouseName");
+    String containerNo = getString(params, "containerNo");
+    Integer onlyAvailable = getFlag(params, "onlyAvailable");
+    return erpInventoryDao.querySpotBatches(productId, warehouseName, containerNo, onlyAvailable);
   }
 
   @Override
   public List<ErpInventoryBatchVo> queryFuturesBatches(Map<String, Object> params) {
-    Long packingItemId = getLong(params, "packingItemId");
-    if (packingItemId == null) {
-      throw new RuntimeException("缺少装箱单产品明细");
+    Long productId = getLong(params, "productId");
+    if (productId == null) {
+      throw new RuntimeException("缺少期货库存产品");
     }
-    return erpInventoryDao.queryFuturesBatches(packingItemId);
+    String contractNo = getString(params, "contractNo");
+    String containerNo = getString(params, "containerNo");
+    Integer onlyAvailable = getFlag(params, "onlyAvailable");
+    return erpInventoryDao.queryFuturesBatches(productId, contractNo, containerNo, onlyAvailable);
   }
 
   @Override

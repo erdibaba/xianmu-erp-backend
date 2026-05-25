@@ -24,10 +24,15 @@ public interface ErpInventoryDao {
                                            @Param("containerNo") String containerNo,
                                            @Param("onlyAvailable") Integer onlyAvailable);
 
-  List<ErpInventoryBatchVo> querySpotBatches(@Param("presaleOrderId") Long presaleOrderId,
-                                             @Param("productId") Long productId);
+  List<ErpInventoryBatchVo> querySpotBatches(@Param("productId") Long productId,
+                                             @Param("warehouseName") String warehouseName,
+                                             @Param("containerNo") String containerNo,
+                                             @Param("onlyAvailable") Integer onlyAvailable);
 
-  List<ErpInventoryBatchVo> queryFuturesBatches(@Param("packingItemId") Long packingItemId);
+  List<ErpInventoryBatchVo> queryFuturesBatches(@Param("productId") Long productId,
+                                                @Param("contractNo") String contractNo,
+                                                @Param("containerNo") String containerNo,
+                                                @Param("onlyAvailable") Integer onlyAvailable);
 
   List<ErpInventoryRecordVo> queryRecords(@Param("keyword") String keyword,
                                           @Param("recordType") String recordType,
