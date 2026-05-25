@@ -22,4 +22,16 @@ public class ErpInventoryController extends AbstractController {
   public R summary(@RequestParam Map<String, Object> params) {
     return R.ok().put("list", erpInventoryService.querySummary(params));
   }
+
+  @GetMapping("/spot")
+  @RequiresPermissions("erp:inventory:list")
+  public R spot(@RequestParam Map<String, Object> params) {
+    return R.ok().put("list", erpInventoryService.querySpot(params));
+  }
+
+  @GetMapping("/futures")
+  @RequiresPermissions("erp:inventory:list")
+  public R futures(@RequestParam Map<String, Object> params) {
+    return R.ok().put("list", erpInventoryService.queryFutures(params));
+  }
 }

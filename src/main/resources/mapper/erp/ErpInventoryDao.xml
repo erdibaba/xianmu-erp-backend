@@ -37,4 +37,160 @@
     ORDER BY safetyWarning DESC, freshnessWarning DESC, l.product_name ASC, l.warehouse_name ASC
   </select>
 
+  <select id="querySpot" resultType="io.renren.modules.erp.vo.ErpSpotInventoryVo">
+    SELECT
+      io.id AS inboundOrderId,
+      i.id AS inboundItemId,
+      io.presale_order_id AS presaleOrderId,
+      io.contract_no AS contractNo,
+      io.customer_name AS customerName,
+      io.warehouse_id AS warehouseId,
+      io.warehouse_name AS warehouseName,
+      io.container_no AS containerNo,
+      i.product_id AS productId,
+      i.product_code AS productCode,
+      i.product_name AS productName,
+      i.product_name_en AS productNameEn,
+      i.product_spec AS productSpec,
+      i.unit AS unit,
+      i.temperature_zone AS temperatureZone,
+      io.create_time AS inboundDate,
+      i.production_date AS productionDate,
+      i.expiry_date AS expiryDate,
+      COALESCE(i.expected_qty, 0) AS expectedBoxes,
+      COALESCE(i.packing_boxes, 0) AS packingBoxes,
+      COALESCE(i.actual_qty, 0) AS inboundBoxes,
+      COALESCE(alloc.allocated_boxes, 0) AS allocatedBoxes,
+      COALESCE(outbound.outbound_boxes, 0) AS outboundBoxes,
+      COALESCE(i.actual_qty, 0) - COALESCE(alloc.allocated_boxes, 0) AS availableBoxes,
+      i.spec_weight AS specWeight,
+      ROUND(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0), 2) AS inboundWeightKg,
+      ROUND((COALESCE(i.actual_qty, 0) - COALESCE(alloc.allocated_boxes, 0)) * COALESCE(i.spec_weight, 0), 2) AS availableWeightKg,
+      COALESCE(i.damage_weight_kg, 0) AS damageWeightKg,
+      COALESCE(p.freshness_warning_days, 0) AS freshnessWarningDays,
+      CASE
+        WHEN i.expiry_date IS NOT NULL
+          AND COALESCE(p.freshness_warning_days, 0) &gt; 0
+          AND DATEDIFF(i.expiry_date, CURDATE()) &lt;= COALESCE(p.freshness_warning_days, 0)
+        THEN 1 ELSE 0
+      END AS freshnessWarning
+    FROM erp_inbound_order_item i
+    INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
+    LEFT JOIN erp_product p ON p.id = i.product_id
+    LEFT JOIN (
+      SELECT source_inbound_item_id, SUM(COALESCE(boxes, 0)) AS allocated_boxes
+      FROM erp_sale_order_item
+      WHERE sale_type = 'SPOT' AND source_inbound_item_id IS NOT NULL
+      GROUP BY source_inbound_item_id
+    ) alloc ON alloc.source_inbound_item_id = i.id
+    LEFT JOIN (
+      SELECT soi.source_inbound_item_id, SUM(COALESCE(soi.boxes, 0)) AS outbound_boxes
+      FROM erp_sale_order_item soi
+      INNER JOIN erp_sale_order so ON so.id = soi.sale_order_id
+      WHERE soi.sale_type = 'SPOT'
+        AND soi.source_inbound_item_id IS NOT NULL
+        AND COALESCE(so.outbound_receipt_confirmed, 0) = 1
+      GROUP BY soi.source_inbound_item_id
+    ) outbound ON outbound.source_inbound_item_id = i.id
+    WHERE i.product_id IS NOT NULL
+    <if test="keyword != null and keyword != ''">
+      AND (
+        i.product_code LIKE CONCAT('%', #{keyword}, '%')
+        OR i.product_name LIKE CONCAT('%', #{keyword}, '%')
+        OR i.product_name_en LIKE CONCAT('%', #{keyword}, '%')
+      )
+    </if>
+    <if test="warehouseName != null and warehouseName != ''">
+      AND io.warehouse_name LIKE CONCAT('%', #{warehouseName}, '%')
+    </if>
+    <if test="containerNo != null and containerNo != ''">
+      AND io.container_no LIKE CONCAT('%', #{containerNo}, '%')
+    </if>
+    <if test="onlyAvailable != null and onlyAvailable == 1">
+      AND COALESCE(i.actual_qty, 0) - COALESCE(alloc.allocated_boxes, 0) &gt; 0
+    </if>
+    ORDER BY io.warehouse_name ASC, i.expiry_date ASC, io.create_time ASC, io.container_no ASC, i.product_code ASC
+  </select>
+
+  <select id="queryFutures" resultType="io.renren.modules.erp.vo.ErpFuturesInventoryVo">
+    SELECT
+      po.id AS presaleOrderId,
+      pp.id AS packingId,
+      pi.id AS packingItemId,
+      COALESCE(po.seller_contract_no, po.order_no) AS presaleOrderNo,
+      COALESCE(pp.contract_no, pc.contract_no, po.seller_contract_no, po.order_no) AS contractNo,
+      po.customer_reference AS customerReference,
+      po.brand_id AS brandId,
+      po.brand_name AS brandName,
+      COALESCE(pp.container_no, pc.container_no) AS containerNo,
+      po.order_date AS orderDate,
+      COALESCE(pc.expected_arrival_date, po.expected_date) AS expectedArrivalDate,
+      pi.product_id AS productId,
+      pi.product_code AS productCode,
+      pi.product_name AS productName,
+      pi.product_name_en AS productNameEn,
+      COALESCE(pi.total_boxes, 0) AS futuresBoxes,
+      COALESCE(sold.sold_boxes, 0) AS futuresSoldBoxes,
+      GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0) - COALESCE(inbound.transferred_boxes, 0), 0) AS futuresAvailableBoxes,
+      COALESCE(inbound.transferred_boxes, 0) AS transferredSpotBoxes,
+      COALESCE(pi.total_boxes, 0) - COALESCE(inbound.transferred_boxes, 0) AS notInboundBoxes,
+      COALESCE(pi.total_weight, 0) AS totalWeightKg,
+      COALESCE(pi.shelf_life_days, pp.shelf_life_days) AS shelfLifeDays,
+      batch.production_date AS productionDate,
+      batch.expiry_date AS expiryDate,
+      CASE
+        WHEN COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0) AND COALESCE(pi.total_boxes, 0) &gt; 0 THEN '已转现货'
+        WHEN COALESCE(inbound.transferred_boxes, 0) &gt; 0 THEN '部分入库'
+        ELSE '未入库'
+      END AS transferStatus,
+      COALESCE(p.freshness_warning_days, 0) AS freshnessWarningDays,
+      CASE
+        WHEN batch.expiry_date IS NOT NULL
+          AND COALESCE(p.freshness_warning_days, 0) &gt; 0
+          AND DATEDIFF(batch.expiry_date, CURDATE()) &lt;= COALESCE(p.freshness_warning_days, 0)
+        THEN 1 ELSE 0
+      END AS freshnessWarning
+    FROM erp_presale_packing_item pi
+    INNER JOIN erp_presale_packing pp ON pp.id = pi.packing_id
+    INNER JOIN erp_presale_order po ON po.id = pp.presale_order_id
+    LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = po.id
+    LEFT JOIN erp_product p ON p.id = pi.product_id
+    LEFT JOIN (
+      SELECT packing_item_id, MIN(production_date) AS production_date, MIN(expiry_date) AS expiry_date
+      FROM erp_presale_packing_batch
+      GROUP BY packing_item_id
+    ) batch ON batch.packing_item_id = pi.id
+    LEFT JOIN (
+      SELECT source_presale_order_id, product_id, SUM(COALESCE(boxes, 0)) AS sold_boxes
+      FROM erp_sale_order_item
+      WHERE sale_type = 'FUTURES' AND source_presale_order_id IS NOT NULL AND product_id IS NOT NULL
+      GROUP BY source_presale_order_id, product_id
+    ) sold ON sold.source_presale_order_id = po.id AND sold.product_id = pi.product_id
+    LEFT JOIN (
+      SELECT io.presale_order_id, i.product_id, SUM(COALESCE(i.actual_qty, 0)) AS transferred_boxes
+      FROM erp_inbound_order_item i
+      INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
+      WHERE i.product_id IS NOT NULL
+      GROUP BY io.presale_order_id, i.product_id
+    ) inbound ON inbound.presale_order_id = po.id AND inbound.product_id = pi.product_id
+    WHERE pi.product_id IS NOT NULL
+    <if test="keyword != null and keyword != ''">
+      AND (
+        pi.product_code LIKE CONCAT('%', #{keyword}, '%')
+        OR pi.product_name LIKE CONCAT('%', #{keyword}, '%')
+        OR pi.product_name_en LIKE CONCAT('%', #{keyword}, '%')
+      )
+    </if>
+    <if test="contractNo != null and contractNo != ''">
+      AND COALESCE(pp.contract_no, pc.contract_no, po.seller_contract_no, po.order_no) LIKE CONCAT('%', #{contractNo}, '%')
+    </if>
+    <if test="containerNo != null and containerNo != ''">
+      AND COALESCE(pp.container_no, pc.container_no) LIKE CONCAT('%', #{containerNo}, '%')
+    </if>
+    <if test="onlyAvailable != null and onlyAvailable == 1">
+      AND GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0) - COALESCE(inbound.transferred_boxes, 0), 0) &gt; 0
+    </if>
+    ORDER BY COALESCE(pc.expected_arrival_date, po.expected_date) ASC, COALESCE(pp.contract_no, pc.contract_no, po.seller_contract_no, po.order_no) ASC, pi.product_code ASC
+  </select>
+
 </mapper>
