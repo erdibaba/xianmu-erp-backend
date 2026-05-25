@@ -3,6 +3,7 @@ package io.renren.modules.erp.service.impl;
 import io.renren.modules.erp.dao.ErpInventoryDao;
 import io.renren.modules.erp.service.ErpInventoryService;
 import io.renren.modules.erp.vo.ErpFuturesInventoryVo;
+import io.renren.modules.erp.vo.ErpInventoryBatchVo;
 import io.renren.modules.erp.vo.ErpInventorySummaryVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
 import java.util.List;
@@ -40,6 +41,25 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     return erpInventoryDao.queryFutures(keyword, contractNo, containerNo, onlyAvailable);
   }
 
+  @Override
+  public List<ErpInventoryBatchVo> querySpotBatches(Map<String, Object> params) {
+    Long presaleOrderId = getLong(params, "presaleOrderId");
+    Long productId = getLong(params, "productId");
+    if (presaleOrderId == null || productId == null) {
+      throw new RuntimeException("缺少库存批次查询条件");
+    }
+    return erpInventoryDao.querySpotBatches(presaleOrderId, productId);
+  }
+
+  @Override
+  public List<ErpInventoryBatchVo> queryFuturesBatches(Map<String, Object> params) {
+    Long packingItemId = getLong(params, "packingItemId");
+    if (packingItemId == null) {
+      throw new RuntimeException("缺少装箱单产品明细");
+    }
+    return erpInventoryDao.queryFuturesBatches(packingItemId);
+  }
+
   private String getString(Map<String, Object> params, String key) {
     Object value = params.get(key);
     return value == null ? null : value.toString().trim();
@@ -51,5 +71,13 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
       return 0;
     }
     return "1".equals(value.toString()) || "true".equalsIgnoreCase(value.toString()) ? 1 : 0;
+  }
+
+  private Long getLong(Map<String, Object> params, String key) {
+    Object value = params.get(key);
+    if (value == null || value.toString().trim().length() == 0) {
+      return null;
+    }
+    return Long.valueOf(value.toString());
   }
 }

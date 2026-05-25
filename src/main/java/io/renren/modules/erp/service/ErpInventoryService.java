@@ -1,6 +1,7 @@
 package io.renren.modules.erp.service;
 
 import io.renren.modules.erp.vo.ErpFuturesInventoryVo;
+import io.renren.modules.erp.vo.ErpInventoryBatchVo;
 import io.renren.modules.erp.vo.ErpInventorySummaryVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
 import java.util.List;
@@ -12,4 +13,8 @@ public interface ErpInventoryService {
   List<ErpSpotInventoryVo> querySpot(Map<String, Object> params);
 
   List<ErpFuturesInventoryVo> queryFutures(Map<String, Object> params);
+
+  List<ErpInventoryBatchVo> querySpotBatches(Map<String, Object> params);
+
+  List<ErpInventoryBatchVo> queryFuturesBatches(Map<String, Object> params);
 }
