@@ -253,4 +253,78 @@
     ORDER BY b.production_date ASC, b.expiry_date ASC, b.line_no ASC, b.id ASC
   </select>
 
+  <select id="queryRecords" resultType="io.renren.modules.erp.vo.ErpInventoryRecordVo">
+    SELECT *
+    FROM (
+      SELECT
+        'INBOUND' AS recordType,
+        '入库' AS recordTypeName,
+        COALESCE(io.order_date, io.create_time) AS bizDate,
+        io.wms_order_no AS orderNo,
+        io.contract_no AS contractNo,
+        io.customer_name AS customerName,
+        io.warehouse_name AS warehouseName,
+        io.container_no AS containerNo,
+        i.product_id AS productId,
+        i.product_code AS productCode,
+        i.product_name AS productName,
+        i.product_name_en AS productNameEn,
+        i.product_spec AS productSpec,
+        i.unit AS unit,
+        COALESCE(i.actual_qty, 0) AS boxes,
+        ROUND(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0), 2) AS weightKg,
+        '入库单' AS sourceRemark
+      FROM erp_inbound_order_item i
+      INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
+      WHERE i.product_id IS NOT NULL
+      UNION ALL
+      SELECT
+        'OUTBOUND' AS recordType,
+        '出库' AS recordTypeName,
+        COALESCE(r.update_time, so.update_time, so.create_time) AS bizDate,
+        so.order_no AS orderNo,
+        so.contract_no AS contractNo,
+        so.secondary_partner_name AS customerName,
+        soi.warehouse_name AS warehouseName,
+        soi.source_container_no AS containerNo,
+        soi.product_id AS productId,
+        soi.product_code AS productCode,
+        soi.product_name AS productName,
+        soi.product_name_en AS productNameEn,
+        soi.product_spec AS productSpec,
+        soi.unit AS unit,
+        COALESCE(soi.boxes, 0) AS boxes,
+        COALESCE(soi.contract_quantity_kg, ROUND(COALESCE(soi.boxes, 0) * COALESCE(soi.spec_weight, 0), 2)) AS weightKg,
+        '销售出库' AS sourceRemark
+      FROM erp_sale_order_item soi
+      INNER JOIN erp_sale_order so ON so.id = soi.sale_order_id
+      LEFT JOIN erp_sale_outbound_receipt r ON r.sale_order_id = so.id
+      WHERE soi.product_id IS NOT NULL
+        AND COALESCE(so.outbound_receipt_confirmed, 0) = 1
+    ) t
+    WHERE 1 = 1
+    <if test="keyword != null and keyword != ''">
+      AND (
+        t.product_code LIKE CONCAT('%', #{keyword}, '%')
+        OR t.product_name LIKE CONCAT('%', #{keyword}, '%')
+        OR t.productNameEn LIKE CONCAT('%', #{keyword}, '%')
+        OR t.orderNo LIKE CONCAT('%', #{keyword}, '%')
+        OR t.customerName LIKE CONCAT('%', #{keyword}, '%')
+      )
+    </if>
+    <if test="recordType != null and recordType != ''">
+      AND t.recordType = #{recordType}
+    </if>
+    <if test="contractNo != null and contractNo != ''">
+      AND t.contractNo LIKE CONCAT('%', #{contractNo}, '%')
+    </if>
+    <if test="warehouseName != null and warehouseName != ''">
+      AND t.warehouseName LIKE CONCAT('%', #{warehouseName}, '%')
+    </if>
+    <if test="containerNo != null and containerNo != ''">
+      AND t.containerNo LIKE CONCAT('%', #{containerNo}, '%')
+    </if>
+    ORDER BY t.bizDate DESC, t.recordType ASC, t.orderNo DESC, t.productCode ASC
+  </select>
+
 </mapper>

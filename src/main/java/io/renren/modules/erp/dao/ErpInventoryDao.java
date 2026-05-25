@@ -3,6 +3,7 @@ package io.renren.modules.erp.dao;
 import io.renren.modules.erp.vo.ErpInventorySummaryVo;
 import io.renren.modules.erp.vo.ErpFuturesInventoryVo;
 import io.renren.modules.erp.vo.ErpInventoryBatchVo;
+import io.renren.modules.erp.vo.ErpInventoryRecordVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
 import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
@@ -27,4 +28,10 @@ public interface ErpInventoryDao {
                                              @Param("productId") Long productId);
 
   List<ErpInventoryBatchVo> queryFuturesBatches(@Param("packingItemId") Long packingItemId);
+
+  List<ErpInventoryRecordVo> queryRecords(@Param("keyword") String keyword,
+                                          @Param("recordType") String recordType,
+                                          @Param("contractNo") String contractNo,
+                                          @Param("warehouseName") String warehouseName,
+                                          @Param("containerNo") String containerNo);
 }

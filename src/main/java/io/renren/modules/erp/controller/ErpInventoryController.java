@@ -46,4 +46,10 @@ public class ErpInventoryController extends AbstractController {
   public R futuresBatches(@RequestParam Map<String, Object> params) {
     return R.ok().put("list", erpInventoryService.queryFuturesBatches(params));
   }
+
+  @GetMapping("/records")
+  @RequiresPermissions("erp:inventory:list")
+  public R records(@RequestParam Map<String, Object> params) {
+    return R.ok().put("list", erpInventoryService.queryRecords(params));
+  }
 }

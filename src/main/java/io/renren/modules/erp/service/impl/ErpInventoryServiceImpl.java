@@ -4,6 +4,7 @@ import io.renren.modules.erp.dao.ErpInventoryDao;
 import io.renren.modules.erp.service.ErpInventoryService;
 import io.renren.modules.erp.vo.ErpFuturesInventoryVo;
 import io.renren.modules.erp.vo.ErpInventoryBatchVo;
+import io.renren.modules.erp.vo.ErpInventoryRecordVo;
 import io.renren.modules.erp.vo.ErpInventorySummaryVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
 import java.util.List;
@@ -58,6 +59,16 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
       throw new RuntimeException("缺少装箱单产品明细");
     }
     return erpInventoryDao.queryFuturesBatches(packingItemId);
+  }
+
+  @Override
+  public List<ErpInventoryRecordVo> queryRecords(Map<String, Object> params) {
+    String keyword = getString(params, "keyword");
+    String recordType = getString(params, "recordType");
+    String contractNo = getString(params, "contractNo");
+    String warehouseName = getString(params, "warehouseName");
+    String containerNo = getString(params, "containerNo");
+    return erpInventoryDao.queryRecords(keyword, recordType, contractNo, warehouseName, containerNo);
   }
 
   private String getString(Map<String, Object> params, String key) {
