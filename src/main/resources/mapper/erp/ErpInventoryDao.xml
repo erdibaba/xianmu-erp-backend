@@ -207,6 +207,10 @@
       GROUP BY io.presale_order_id, i.product_id
     ) inbound ON inbound.presale_order_id = po.id AND inbound.product_id = pi.product_id
     WHERE pi.product_id IS NOT NULL
+      AND NOT (
+        COALESCE(inbound.transferred_boxes, 0) &gt;= COALESCE(pi.total_boxes, 0)
+        AND COALESCE(pi.total_boxes, 0) &gt; 0
+      )
     <if test="keyword != null and keyword != ''">
       AND (
         pi.product_code LIKE CONCAT('%', #{keyword}, '%')
