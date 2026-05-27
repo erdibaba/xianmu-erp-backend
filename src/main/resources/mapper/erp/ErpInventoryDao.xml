@@ -54,10 +54,10 @@
       SUM(COALESCE(alloc.allocated_boxes, 0)) AS allocatedBoxes,
       SUM(COALESCE(outbound.outbound_boxes, 0)) AS outboundBoxes,
       SUM(COALESCE(i.actual_qty, 0)) - SUM(COALESCE(alloc.allocated_boxes, 0)) AS availableBoxes,
-      ROUND(SUM(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0)), 2) AS inboundWeightKg,
+      ROUND(SUM(COALESCE(pack.total_weight, 0)), 2) AS inboundWeightKg,
       ROUND(SUM(COALESCE(alloc.allocated_weight, 0)), 2) AS allocatedWeightKg,
       ROUND(SUM(COALESCE(i.damage_weight_kg, 0)), 2) AS damageWeightKg,
-      ROUND(SUM(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0)) - SUM(COALESCE(alloc.allocated_weight, 0)) - SUM(COALESCE(i.damage_weight_kg, 0)), 2) AS availableWeightKg,
+      ROUND(SUM(COALESCE(pack.total_weight, 0)) - SUM(COALESCE(alloc.allocated_weight, 0)) - SUM(COALESCE(i.damage_weight_kg, 0)), 2) AS availableWeightKg,
       MAX(COALESCE(p.freshness_warning_days, 0)) AS freshnessWarningDays,
       MAX(CASE
         WHEN i.expiry_date IS NOT NULL
@@ -77,6 +77,18 @@
       WHERE sale_type = 'SPOT' AND source_inbound_item_id IS NOT NULL
       GROUP BY source_inbound_item_id
     ) alloc ON alloc.source_inbound_item_id = i.id
+    LEFT JOIN (
+      SELECT
+        i2.id AS inbound_item_id,
+        SUM(COALESCE(pi.total_weight, 0)) AS total_weight
+      FROM erp_inbound_order_item i2
+      INNER JOIN erp_inbound_order io2 ON io2.id = i2.inbound_order_id
+      INNER JOIN erp_presale_packing pp ON pp.presale_order_id = io2.presale_order_id
+        AND (pp.container_no = io2.container_no OR pp.container_no IS NULL OR io2.container_no IS NULL)
+      INNER JOIN erp_presale_packing_item pi ON pi.packing_id = pp.id AND pi.product_id = i2.product_id
+      WHERE i2.product_id IS NOT NULL
+      GROUP BY i2.id
+    ) pack ON pack.inbound_item_id = i.id
     LEFT JOIN (
       SELECT soi.source_inbound_item_id, SUM(COALESCE(soi.boxes, 0)) AS outbound_boxes
       FROM erp_sale_order_item soi
@@ -254,17 +266,29 @@
             i.production_date AS productionDate,
             i.expiry_date AS expiryDate,
             COALESCE(i.actual_qty, 0) AS batchBoxes,
-            ROUND(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0), 2) AS batchWeight,
+            ROUND(COALESCE(pack.total_weight, 0), 2) AS batchWeight,
             COALESCE(i.damage_weight_kg, 0) AS itemDamageWeight,
             COALESCE(i.shelf_life_days, 0) AS shelfLifeDays,
             COALESCE(p.freshness_warning_days, 0) AS freshnessWarningDays,
             COALESCE(alloc.allocated_boxes, 0) AS itemAllocatedBoxes,
             COALESCE(alloc.allocated_weight, 0) AS itemAllocatedWeight,
             0 AS priorBoxes,
-            ROUND(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0), 2) AS itemBatchWeight
+            ROUND(COALESCE(pack.total_weight, 0), 2) AS itemBatchWeight
           FROM erp_inbound_order_item i
           INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
+          LEFT JOIN (
+            SELECT
+              i2.id AS inbound_item_id,
+              SUM(COALESCE(pi.total_weight, 0)) AS total_weight
+            FROM erp_inbound_order_item i2
+            INNER JOIN erp_inbound_order io2 ON io2.id = i2.inbound_order_id
+            INNER JOIN erp_presale_packing pp ON pp.presale_order_id = io2.presale_order_id
+              AND (pp.container_no = io2.container_no OR pp.container_no IS NULL OR io2.container_no IS NULL)
+            INNER JOIN erp_presale_packing_item pi ON pi.packing_id = pp.id AND pi.product_id = i2.product_id
+            WHERE i2.product_id IS NOT NULL
+            GROUP BY i2.id
+          ) pack ON pack.inbound_item_id = i.id
           LEFT JOIN (
             SELECT
               source_inbound_item_id,
@@ -467,10 +491,22 @@
         i.product_spec AS productSpec,
         i.unit AS unit,
         COALESCE(i.actual_qty, 0) AS boxes,
-        ROUND(COALESCE(i.actual_qty, 0) * COALESCE(i.spec_weight, 0), 2) AS weightKg,
+        ROUND(COALESCE(pack.total_weight, 0), 2) AS weightKg,
         '入库单' AS sourceRemark
       FROM erp_inbound_order_item i
       INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
+      LEFT JOIN (
+        SELECT
+          i2.id AS inbound_item_id,
+          SUM(COALESCE(pi.total_weight, 0)) AS total_weight
+        FROM erp_inbound_order_item i2
+        INNER JOIN erp_inbound_order io2 ON io2.id = i2.inbound_order_id
+        INNER JOIN erp_presale_packing pp ON pp.presale_order_id = io2.presale_order_id
+          AND (pp.container_no = io2.container_no OR pp.container_no IS NULL OR io2.container_no IS NULL)
+        INNER JOIN erp_presale_packing_item pi ON pi.packing_id = pp.id AND pi.product_id = i2.product_id
+        WHERE i2.product_id IS NOT NULL
+        GROUP BY i2.id
+      ) pack ON pack.inbound_item_id = i.id
       WHERE i.product_id IS NOT NULL
       UNION ALL
       SELECT
@@ -489,7 +525,7 @@
         soi.product_spec AS productSpec,
         soi.unit AS unit,
         COALESCE(soi.boxes, 0) AS boxes,
-        COALESCE(soi.contract_quantity_kg, ROUND(COALESCE(soi.boxes, 0) * COALESCE(soi.spec_weight, 0), 2)) AS weightKg,
+        COALESCE(soi.contract_quantity_kg, 0) AS weightKg,
         '销售出库' AS sourceRemark
       FROM erp_sale_order_item soi
       INNER JOIN erp_sale_order so ON so.id = soi.sale_order_id
