@@ -70,12 +70,30 @@
     LEFT JOIN erp_product p ON p.id = i.product_id
     LEFT JOIN (
       SELECT
-        source_inbound_item_id,
-        SUM(COALESCE(boxes, 0)) AS allocated_boxes,
-        SUM(COALESCE(contract_quantity_kg, 0)) AS allocated_weight
-      FROM erp_sale_order_item
-      WHERE sale_type = 'SPOT' AND source_inbound_item_id IS NOT NULL
-      GROUP BY source_inbound_item_id
+        soi.source_inbound_item_id,
+        SUM(COALESCE(soi.boxes, 0)) AS allocated_boxes,
+        SUM(CASE
+          WHEN COALESCE(so.outbound_receipt_confirmed, 0) = 1
+            THEN COALESCE(receipt.shipped_weight, soi.contract_quantity_kg, 0)
+          ELSE COALESCE(soi.contract_quantity_kg, 0)
+        END) AS allocated_weight
+      FROM erp_sale_order_item soi
+      LEFT JOIN erp_sale_order so ON so.id = soi.sale_order_id
+      LEFT JOIN (
+        SELECT sale_order_id, product_id, container_no, SUM(COALESCE(total_weight, 0)) AS shipped_weight
+        FROM erp_sale_outbound_receipt_item
+        GROUP BY sale_order_id, product_id, container_no
+      ) receipt ON receipt.sale_order_id = soi.sale_order_id
+        AND receipt.product_id = soi.product_id
+        AND (
+          receipt.container_no = soi.source_container_no
+          OR receipt.container_no IS NULL
+          OR soi.source_container_no IS NULL
+          OR receipt.container_no LIKE CONCAT(soi.source_container_no, '%')
+          OR soi.source_container_no LIKE CONCAT(receipt.container_no, '%')
+        )
+      WHERE soi.sale_type = 'SPOT' AND soi.source_inbound_item_id IS NOT NULL
+      GROUP BY soi.source_inbound_item_id
     ) alloc ON alloc.source_inbound_item_id = i.id
     LEFT JOIN (
       SELECT
@@ -232,12 +250,30 @@
           LEFT JOIN erp_product p ON p.id = i.product_id
           LEFT JOIN (
             SELECT
-              source_inbound_item_id,
-              SUM(COALESCE(boxes, 0)) AS allocated_boxes,
-              SUM(COALESCE(contract_quantity_kg, 0)) AS allocated_weight
-            FROM erp_sale_order_item
-            WHERE sale_type = 'SPOT' AND source_inbound_item_id IS NOT NULL
-            GROUP BY source_inbound_item_id
+              soi.source_inbound_item_id,
+              SUM(COALESCE(soi.boxes, 0)) AS allocated_boxes,
+              SUM(CASE
+                WHEN COALESCE(so.outbound_receipt_confirmed, 0) = 1
+                  THEN COALESCE(receipt.shipped_weight, soi.contract_quantity_kg, 0)
+                ELSE COALESCE(soi.contract_quantity_kg, 0)
+              END) AS allocated_weight
+            FROM erp_sale_order_item soi
+            LEFT JOIN erp_sale_order so ON so.id = soi.sale_order_id
+            LEFT JOIN (
+              SELECT sale_order_id, product_id, container_no, SUM(COALESCE(total_weight, 0)) AS shipped_weight
+              FROM erp_sale_outbound_receipt_item
+              GROUP BY sale_order_id, product_id, container_no
+            ) receipt ON receipt.sale_order_id = soi.sale_order_id
+              AND receipt.product_id = soi.product_id
+              AND (
+                receipt.container_no = soi.source_container_no
+                OR receipt.container_no IS NULL
+                OR soi.source_container_no IS NULL
+                OR receipt.container_no LIKE CONCAT(soi.source_container_no, '%')
+                OR soi.source_container_no LIKE CONCAT(receipt.container_no, '%')
+              )
+            WHERE soi.sale_type = 'SPOT' AND soi.source_inbound_item_id IS NOT NULL
+            GROUP BY soi.source_inbound_item_id
           ) alloc ON alloc.source_inbound_item_id = i.id
           WHERE i.product_id = #{productId}
           <if test="warehouseName != null and warehouseName != ''">
@@ -291,12 +327,30 @@
           ) pack ON pack.inbound_item_id = i.id
           LEFT JOIN (
             SELECT
-              source_inbound_item_id,
-              SUM(COALESCE(boxes, 0)) AS allocated_boxes,
-              SUM(COALESCE(contract_quantity_kg, 0)) AS allocated_weight
-            FROM erp_sale_order_item
-            WHERE sale_type = 'SPOT' AND source_inbound_item_id IS NOT NULL
-            GROUP BY source_inbound_item_id
+              soi.source_inbound_item_id,
+              SUM(COALESCE(soi.boxes, 0)) AS allocated_boxes,
+              SUM(CASE
+                WHEN COALESCE(so.outbound_receipt_confirmed, 0) = 1
+                  THEN COALESCE(receipt.shipped_weight, soi.contract_quantity_kg, 0)
+                ELSE COALESCE(soi.contract_quantity_kg, 0)
+              END) AS allocated_weight
+            FROM erp_sale_order_item soi
+            LEFT JOIN erp_sale_order so ON so.id = soi.sale_order_id
+            LEFT JOIN (
+              SELECT sale_order_id, product_id, container_no, SUM(COALESCE(total_weight, 0)) AS shipped_weight
+              FROM erp_sale_outbound_receipt_item
+              GROUP BY sale_order_id, product_id, container_no
+            ) receipt ON receipt.sale_order_id = soi.sale_order_id
+              AND receipt.product_id = soi.product_id
+              AND (
+                receipt.container_no = soi.source_container_no
+                OR receipt.container_no IS NULL
+                OR soi.source_container_no IS NULL
+                OR receipt.container_no LIKE CONCAT(soi.source_container_no, '%')
+                OR soi.source_container_no LIKE CONCAT(receipt.container_no, '%')
+              )
+            WHERE soi.sale_type = 'SPOT' AND soi.source_inbound_item_id IS NOT NULL
+            GROUP BY soi.source_inbound_item_id
           ) alloc ON alloc.source_inbound_item_id = i.id
           WHERE i.product_id = #{productId}
           <if test="warehouseName != null and warehouseName != ''">
@@ -359,13 +413,23 @@
     ) batch ON batch.packing_item_id = pi.id
     LEFT JOIN (
       SELECT
-        source_presale_order_id,
-        product_id,
-        SUM(COALESCE(boxes, 0)) AS sold_boxes,
-        SUM(COALESCE(contract_quantity_kg, 0)) AS sold_weight
-      FROM erp_sale_order_item
-      WHERE sale_type = 'FUTURES' AND source_presale_order_id IS NOT NULL AND product_id IS NOT NULL
-      GROUP BY source_presale_order_id, product_id
+        soi.source_presale_order_id,
+        soi.product_id,
+        SUM(COALESCE(soi.boxes, 0)) AS sold_boxes,
+        SUM(CASE
+          WHEN COALESCE(so.outbound_receipt_confirmed, 0) = 1
+            THEN COALESCE(receipt.shipped_weight, soi.contract_quantity_kg, 0)
+          ELSE COALESCE(soi.contract_quantity_kg, 0)
+        END) AS sold_weight
+      FROM erp_sale_order_item soi
+      LEFT JOIN erp_sale_order so ON so.id = soi.sale_order_id
+      LEFT JOIN (
+        SELECT sale_order_id, product_id, SUM(COALESCE(total_weight, 0)) AS shipped_weight
+        FROM erp_sale_outbound_receipt_item
+        GROUP BY sale_order_id, product_id
+      ) receipt ON receipt.sale_order_id = soi.sale_order_id AND receipt.product_id = soi.product_id
+      WHERE soi.sale_type = 'FUTURES' AND soi.source_presale_order_id IS NOT NULL AND soi.product_id IS NOT NULL
+      GROUP BY soi.source_presale_order_id, soi.product_id
     ) sold ON sold.source_presale_order_id = po.id AND sold.product_id = pi.product_id
     LEFT JOIN (
       SELECT io.presale_order_id, i.product_id, SUM(COALESCE(i.actual_qty, 0)) AS transferred_boxes
@@ -440,13 +504,23 @@
     LEFT JOIN erp_product p ON p.id = pi.product_id
     LEFT JOIN (
       SELECT
-        source_presale_order_id,
-        product_id,
-        SUM(COALESCE(boxes, 0)) AS sold_boxes,
-        SUM(COALESCE(contract_quantity_kg, 0)) AS sold_weight
-      FROM erp_sale_order_item
-      WHERE sale_type = 'FUTURES' AND source_presale_order_id IS NOT NULL AND product_id IS NOT NULL
-      GROUP BY source_presale_order_id, product_id
+        soi.source_presale_order_id,
+        soi.product_id,
+        SUM(COALESCE(soi.boxes, 0)) AS sold_boxes,
+        SUM(CASE
+          WHEN COALESCE(so.outbound_receipt_confirmed, 0) = 1
+            THEN COALESCE(receipt.shipped_weight, soi.contract_quantity_kg, 0)
+          ELSE COALESCE(soi.contract_quantity_kg, 0)
+        END) AS sold_weight
+      FROM erp_sale_order_item soi
+      LEFT JOIN erp_sale_order so ON so.id = soi.sale_order_id
+      LEFT JOIN (
+        SELECT sale_order_id, product_id, SUM(COALESCE(total_weight, 0)) AS shipped_weight
+        FROM erp_sale_outbound_receipt_item
+        GROUP BY sale_order_id, product_id
+      ) receipt ON receipt.sale_order_id = soi.sale_order_id AND receipt.product_id = soi.product_id
+      WHERE soi.sale_type = 'FUTURES' AND soi.source_presale_order_id IS NOT NULL AND soi.product_id IS NOT NULL
+      GROUP BY soi.source_presale_order_id, soi.product_id
     ) sold ON sold.source_presale_order_id = po.id AND sold.product_id = pi.product_id
     LEFT JOIN (
       SELECT io.presale_order_id, i.product_id, SUM(COALESCE(i.actual_qty, 0)) AS transferred_boxes
@@ -516,21 +590,26 @@
         so.order_no AS orderNo,
         so.contract_no AS contractNo,
         so.secondary_partner_name AS customerName,
-        soi.warehouse_name AS warehouseName,
-        soi.source_container_no AS containerNo,
-        soi.product_id AS productId,
-        soi.product_code AS productCode,
-        soi.product_name AS productName,
-        soi.product_name_en AS productNameEn,
-        soi.product_spec AS productSpec,
-        soi.unit AS unit,
-        COALESCE(soi.boxes, 0) AS boxes,
-        COALESCE(soi.contract_quantity_kg, 0) AS weightKg,
+        (
+          SELECT MAX(soi2.warehouse_name)
+          FROM erp_sale_order_item soi2
+          WHERE soi2.sale_order_id = ri.sale_order_id
+            AND soi2.product_id = ri.product_id
+        ) AS warehouseName,
+        ri.container_no AS containerNo,
+        ri.product_id AS productId,
+        ri.product_code AS productCode,
+        ri.product_name AS productName,
+        ri.product_name_en AS productNameEn,
+        ri.product_spec AS productSpec,
+        ri.unit AS unit,
+        COALESCE(ri.shipped_qty, 0) AS boxes,
+        COALESCE(ri.total_weight, 0) AS weightKg,
         '销售出库' AS sourceRemark
-      FROM erp_sale_order_item soi
-      INNER JOIN erp_sale_order so ON so.id = soi.sale_order_id
-      LEFT JOIN erp_sale_outbound_receipt r ON r.sale_order_id = so.id
-      WHERE soi.product_id IS NOT NULL
+      FROM erp_sale_outbound_receipt_item ri
+      INNER JOIN erp_sale_outbound_receipt r ON r.id = ri.receipt_id
+      INNER JOIN erp_sale_order so ON so.id = ri.sale_order_id
+      WHERE ri.product_id IS NOT NULL
         AND COALESCE(so.outbound_receipt_confirmed, 0) = 1
     ) t
     WHERE 1 = 1
