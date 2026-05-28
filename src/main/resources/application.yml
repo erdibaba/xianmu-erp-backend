@@ -69,5 +69,7 @@ renren:
 erp:
   wecom:
     corp-id: ${WECOM_CORP_ID:wwc4f753d9acfb9b2c}
+    corp-secret: ${WECOM_CORP_SECRET:BTFh5Y1-ALfOMDJpblQaQ8TM8w_81UV8biCuR8OpiXU}
+    default-sender: ${WECOM_DEFAULT_SENDER:ZhangYi}
     callback-token: ${WECOM_CALLBACK_TOKEN:7rkM3e4kZSNf5X3qaltNFfSI}
     encoding-aes-key: ${WECOM_ENCODING_AES_KEY:eutAQnNR0hV63dOowEIy0hBkF7gsfSd0rs60utdxefP}

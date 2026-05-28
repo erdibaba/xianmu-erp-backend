@@ -25,6 +25,9 @@ public class ErpPartnerEntity implements Serializable {
   private String contactName;
   private String contactPhone;
   private String contactEmail;
+  private String wecomChatId;
+  private String wecomChatName;
+  private String wecomChatOwner;
   private String remark;
   private Integer status;
   private Long createUserId;
