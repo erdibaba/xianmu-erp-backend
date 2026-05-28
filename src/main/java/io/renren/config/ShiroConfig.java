@@ -61,6 +61,7 @@ public class ShiroConfig {
         filterMap.put("/captcha.jpg", "anon");
         filterMap.put("/aaa.txt", "anon");
         filterMap.put("/erp/saleorder/contract/**", "anon");
+        filterMap.put("/erp/wecom/callback", "anon");
         filterMap.put("/**", "jwt");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 

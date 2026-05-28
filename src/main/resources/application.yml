@@ -65,3 +65,9 @@ renren:
     # token有效时长，7天，单位秒
     expire: 604800
     header: token
+
+erp:
+  wecom:
+    corp-id: ${WECOM_CORP_ID:wwc4f753d9acfb9b2c}
+    callback-token: ${WECOM_CALLBACK_TOKEN:7rkM3e4kZSNf5X3qaltNFfSI}
+    encoding-aes-key: ${WECOM_ENCODING_AES_KEY:eutAQnNR0hV63dOowEIy0hBkF7gsfSd0rs60utdxefP}
