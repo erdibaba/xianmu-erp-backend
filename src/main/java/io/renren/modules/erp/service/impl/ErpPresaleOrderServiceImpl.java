@@ -26,6 +26,7 @@ import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpProductEntity;
 import io.renren.modules.erp.service.ErpPresaleOrderService;
+import io.renren.modules.erp.service.ErpWecomService;
 import io.renren.modules.erp.vo.ErpRecognizedPackingBatchVo;
 import io.renren.modules.erp.vo.ErpRecognizedPackingDraftVo;
 import io.renren.modules.erp.vo.ErpRecognizedPackingItemVo;
@@ -76,6 +77,8 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   private ErpProductDao erpProductDao;
   @Autowired
   private ErpPartnerDao erpPartnerDao;
+  @Autowired
+  private ErpWecomService erpWecomService;
 
   @Override
   public PageUtils queryPage(Map<String, Object> params) {
@@ -142,6 +145,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     this.save(order);
     saveItems(order, now);
     saveConfirm(order, userId, now);
+    autoSendShipNotice(order.getId(), userId);
     savePacking(order, userId, now);
   }
 
@@ -154,6 +158,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     erpPresaleOrderItemDao.delete(new QueryWrapper<ErpPresaleOrderItemEntity>().eq("presale_order_id", order.getId()));
     saveItems(order, now);
     replaceConfirm(order, userId, now);
+    autoSendShipNotice(order.getId(), userId);
     replacePacking(order, userId, now);
   }
 
@@ -366,6 +371,14 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       erpPresaleConfirmDao.deleteById(existing.getId());
     }
     saveConfirm(order, userId, now);
+  }
+
+  private void autoSendShipNotice(Long presaleOrderId, Long userId) {
+    try {
+      erpWecomService.autoSendShipNoticeToLinkedFutures(presaleOrderId, userId);
+    } catch (Exception ignored) {
+      // 船期自动通知失败不影响预销售单保存，用户仍可在列表手动重发。
+    }
   }
 
   private void replacePacking(ErpPresaleOrderEntity order, Long userId, Date now) {

@@ -6,11 +6,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.renren.modules.erp.dao.ErpPartnerDao;
 import io.renren.modules.erp.dao.ErpPresaleConfirmDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
+import io.renren.modules.erp.dao.ErpSaleOrderDao;
 import io.renren.modules.erp.dao.ErpShipNoticeDao;
 import io.renren.modules.erp.dao.ErpWecomGroupDao;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
 import io.renren.modules.erp.entity.ErpPresaleConfirmEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
+import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpShipNoticeEntity;
 import io.renren.modules.erp.entity.ErpWecomGroupEntity;
 import io.renren.modules.erp.service.ErpWecomService;
@@ -18,7 +20,9 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,6 +55,8 @@ public class ErpWecomServiceImpl implements ErpWecomService {
   private ErpPresaleOrderDao erpPresaleOrderDao;
   @Autowired
   private ErpPresaleConfirmDao erpPresaleConfirmDao;
+  @Autowired
+  private ErpSaleOrderDao erpSaleOrderDao;
 
   private final RestTemplate restTemplate = new RestTemplate();
   private String cachedAccessToken;
@@ -130,6 +136,35 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     return notices;
   }
 
+  @Override
+  public List<ErpShipNoticeEntity> autoSendShipNoticeToLinkedFutures(Long presaleOrderId, Long userId) {
+    List<ErpShipNoticeEntity> notices = new ArrayList<>();
+    if (presaleOrderId == null || presaleOrderId <= 0) {
+      return notices;
+    }
+    List<ErpSaleOrderEntity> saleOrders = erpSaleOrderDao.selectList(new QueryWrapper<ErpSaleOrderEntity>()
+        .eq("sale_type", "FUTURES")
+        .eq("source_presale_order_id", presaleOrderId)
+        .isNotNull("secondary_partner_id"));
+    Set<Long> partnerIds = new LinkedHashSet<>();
+    for (ErpSaleOrderEntity saleOrder : saleOrders) {
+      if (saleOrder.getSecondaryPartnerId() != null) {
+        partnerIds.add(saleOrder.getSecondaryPartnerId());
+      }
+    }
+    for (Long partnerId : partnerIds) {
+      try {
+        ErpShipNoticeEntity notice = sendShipNotice(presaleOrderId, partnerId, null, userId);
+        if (notice != null) {
+          notices.add(notice);
+        }
+      } catch (Exception ignored) {
+        // 自动船期通知不能影响确认函保存或销售单关联主流程。
+      }
+    }
+    return notices;
+  }
+
   private ErpShipNoticeEntity sendShipNoticeToPartner(ErpPresaleOrderEntity presale, ErpPresaleConfirmEntity confirm, Long partnerId, String content, Long userId) {
     ErpPartnerEntity partner = erpPartnerDao.selectById(partnerId);
     if (partner == null) {
@@ -141,6 +176,10 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     String sender = StringUtils.defaultIfBlank(partner.getWecomChatOwner(), defaultSender);
     if (StringUtils.isBlank(sender)) {
       throw new RuntimeException("请配置企业微信群主或默认发送人");
+    }
+    ErpShipNoticeEntity existing = findExistingSuccessNotice(presale.getId(), partnerId, confirm.getExpectedArrivalDate());
+    if (existing != null) {
+      return existing;
     }
 
     String noticeContent = StringUtils.defaultIfBlank(content, buildShipNoticeContent(presale, confirm, partner));
@@ -176,6 +215,18 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     notice.setUpdateTime(now);
     erpShipNoticeDao.insert(notice);
     return notice;
+  }
+
+  private ErpShipNoticeEntity findExistingSuccessNotice(Long presaleOrderId, Long partnerId, Date expectedArrivalDate) {
+    if (presaleOrderId == null || partnerId == null || expectedArrivalDate == null) {
+      return null;
+    }
+    return erpShipNoticeDao.selectOne(new QueryWrapper<ErpShipNoticeEntity>()
+        .eq("presale_order_id", presaleOrderId)
+        .eq("partner_id", partnerId)
+        .eq("expected_arrival_date", expectedArrivalDate)
+        .in("status", 1, 2)
+        .last("limit 1"));
   }
 
   private ErpWecomGroupEntity syncGroupDetail(String chatId, Integer status) {

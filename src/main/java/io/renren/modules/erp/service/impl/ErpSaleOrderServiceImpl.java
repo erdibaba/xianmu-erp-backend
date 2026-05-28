@@ -55,6 +55,7 @@ import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
+import io.renren.modules.erp.service.ErpWecomService;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
 import io.renren.modules.sys.entity.SysUserEntity;
@@ -139,6 +140,8 @@ implements ErpSaleOrderService {
     private ErpStockLedgerDao erpStockLedgerDao;
     @Autowired
     private SysUserService sysUserService;
+    @Autowired
+    private ErpWecomService erpWecomService;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -261,6 +264,7 @@ implements ErpSaleOrderService {
         order.setPresaleLinkConfirmed(1);
         order.setUpdateTime(new Date());
         this.updateById(order);
+        this.autoSendShipNoticeForConfirmedPresaleLink(order, userId);
     }
 
     @Override
@@ -699,6 +703,9 @@ implements ErpSaleOrderService {
         Date now = new Date();
         this.normalizeOrder(order, existing, userId, now, create);
         List<ErpSaleOrderItemEntity> list = preparedItems = SALE_TYPE_SPOT.equals(order.getSaleType()) ? this.buildSpotAllocationItems(order, existing, true) : this.buildFuturesItems(order);
+        if (create && SALE_TYPE_FUTURES.equals(order.getSaleType()) && order.getSourcePresaleOrderId() != null) {
+            order.setPresaleLinkConfirmed(1);
+        }
         if (create) {
             this.save(order);
         } else {
@@ -708,6 +715,7 @@ implements ErpSaleOrderService {
         }
         this.saveItems(order, preparedItems, now);
         this.refreshOrderStatus(order.getId());
+        this.autoSendShipNoticeForConfirmedPresaleLink(order, userId);
     }
 
     private void normalizeOrder(ErpSaleOrderEntity order, ErpSaleOrderEntity existing, Long userId, Date now, boolean create) {
@@ -753,6 +761,20 @@ implements ErpSaleOrderService {
             order.setOutboundReceiptConfirmed(this.defaultFlag(existing.getOutboundReceiptConfirmed()));
         }
         order.setUpdateTime(now);
+    }
+
+    private void autoSendShipNoticeForConfirmedPresaleLink(ErpSaleOrderEntity order, Long userId) {
+        if (order == null || !SALE_TYPE_FUTURES.equals(order.getSaleType())) {
+            return;
+        }
+        if (this.defaultFlag(order.getPresaleLinkConfirmed()) != 1 || order.getSourcePresaleOrderId() == null) {
+            return;
+        }
+        try {
+            this.erpWecomService.autoSendShipNoticeToLinkedFutures(order.getSourcePresaleOrderId(), userId);
+        } catch (Exception ignored) {
+            // 船期自动通知失败不影响销售单保存或预售关联确认，用户仍可在预销售单列表手动重发。
+        }
     }
 
     private void validateOrder(ErpSaleOrderEntity order) {
