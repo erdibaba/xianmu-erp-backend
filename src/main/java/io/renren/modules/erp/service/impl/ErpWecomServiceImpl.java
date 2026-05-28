@@ -94,10 +94,18 @@ public class ErpWecomServiceImpl implements ErpWecomService {
 
   @Override
   public ErpShipNoticeEntity sendShipNotice(Long presaleOrderId, Long partnerId, String content, Long userId) {
+    List<Long> partnerIds = new ArrayList<>();
+    partnerIds.add(partnerId);
+    List<ErpShipNoticeEntity> notices = sendShipNotice(presaleOrderId, partnerIds, content, userId);
+    return notices.isEmpty() ? null : notices.get(0);
+  }
+
+  @Override
+  public List<ErpShipNoticeEntity> sendShipNotice(Long presaleOrderId, List<Long> partnerIds, String content, Long userId) {
     if (presaleOrderId == null || presaleOrderId <= 0) {
       throw new RuntimeException("请选择预销售单");
     }
-    if (partnerId == null || partnerId <= 0) {
+    if (partnerIds == null || partnerIds.isEmpty()) {
       throw new RuntimeException("请选择二批商");
     }
     ErpPresaleOrderEntity presale = erpPresaleOrderDao.selectById(presaleOrderId);
@@ -109,6 +117,20 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     if (confirm == null || confirm.getExpectedArrivalDate() == null) {
       throw new RuntimeException("请先上传客户订单确认函并维护预计到港时间");
     }
+    List<ErpShipNoticeEntity> notices = new ArrayList<>();
+    for (Long partnerId : partnerIds) {
+      if (partnerId == null || partnerId <= 0) {
+        continue;
+      }
+      notices.add(sendShipNoticeToPartner(presale, confirm, partnerId, content, userId));
+    }
+    if (notices.isEmpty()) {
+      throw new RuntimeException("请选择有效二批商");
+    }
+    return notices;
+  }
+
+  private ErpShipNoticeEntity sendShipNoticeToPartner(ErpPresaleOrderEntity presale, ErpPresaleConfirmEntity confirm, Long partnerId, String content, Long userId) {
     ErpPartnerEntity partner = erpPartnerDao.selectById(partnerId);
     if (partner == null) {
       throw new RuntimeException("二批商不存在");
@@ -136,7 +158,7 @@ public class ErpWecomServiceImpl implements ErpWecomService {
 
     Date now = new Date();
     ErpShipNoticeEntity notice = new ErpShipNoticeEntity();
-    notice.setPresaleOrderId(presaleOrderId);
+    notice.setPresaleOrderId(presale.getId());
     notice.setPartnerId(partnerId);
     notice.setPartnerName(partner.getPartnerName());
     notice.setChatId(partner.getWecomChatId());

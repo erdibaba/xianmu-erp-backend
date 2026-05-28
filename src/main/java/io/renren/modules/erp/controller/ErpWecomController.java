@@ -3,6 +3,8 @@ package io.renren.modules.erp.controller;
 import io.renren.common.utils.R;
 import io.renren.modules.erp.service.ErpWecomService;
 import io.renren.modules.sys.controller.AbstractController;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,9 +36,15 @@ public class ErpWecomController extends AbstractController {
   @RequiresPermissions("erp:tradeorder:update")
   public R sendShipNotice(@RequestBody Map<String, Object> params) {
     Long presaleOrderId = toLong(params.get("presaleOrderId"));
-    Long partnerId = toLong(params.get("partnerId"));
+    List<Long> partnerIds = toLongList(params.get("partnerIds"));
+    if (partnerIds.isEmpty()) {
+      Long partnerId = toLong(params.get("partnerId"));
+      if (partnerId != null) {
+        partnerIds.add(partnerId);
+      }
+    }
     String content = params.get("content") == null ? null : params.get("content").toString();
-    return R.ok().put("notice", erpWecomService.sendShipNotice(presaleOrderId, partnerId, content, getUserId()));
+    return R.ok().put("list", erpWecomService.sendShipNotice(presaleOrderId, partnerIds, content, getUserId()));
   }
 
   private Long toLong(Object value) {
@@ -44,5 +52,18 @@ public class ErpWecomController extends AbstractController {
       return null;
     }
     return Long.valueOf(value.toString());
+  }
+
+  private List<Long> toLongList(Object value) {
+    List<Long> list = new ArrayList<>();
+    if (value instanceof List) {
+      for (Object item : (List<?>) value) {
+        Long id = toLong(item);
+        if (id != null) {
+          list.add(id);
+        }
+      }
+    }
+    return list;
   }
 }
