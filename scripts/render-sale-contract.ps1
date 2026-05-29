@@ -128,8 +128,8 @@ try {
 
   if (-not [string]::IsNullOrWhiteSpace($StampPath) -and (Test-Path -LiteralPath $StampPath)) {
     $stampAnchor = $sheet.Cells.Item($bottomPartyRow, 3)
-    $stampLeft = [double]$stampAnchor.Left + 18
-    $stampTop = [double]$stampAnchor.Top - 22
+    $stampLeft = [double]$stampAnchor.Left - 45
+    $stampTop = [double]$stampAnchor.Top - 170
     $stampSize = 224
     $stamp = $sheet.Shapes.AddPicture($StampPath, $false, $true, $stampLeft, $stampTop, $stampSize, $stampSize)
     $stamp.Placement = 1
