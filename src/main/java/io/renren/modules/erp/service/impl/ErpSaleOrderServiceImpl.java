@@ -116,7 +116,7 @@ implements ErpSaleOrderService {
     private static final String UPLOAD_BASE_DIR = "D:\\renren-fast-vue\\renren-fast\\uploads\\saleorder";
     private static final String CONTRACT_TEMPLATE_PATH = "D:\\renren-fast-vue\\renren-fast\\src\\main\\resources\\templates\\sale-contract-template.xlsx";
     private static final String CONTRACT_RENDER_SCRIPT_PATH = "D:\\renren-fast-vue\\renren-fast\\scripts\\render-sale-contract.ps1";
-    private static final String CONTRACT_STAMP_PATH = "D:\\renren-fast-vue\\renren-fast\\src\\main\\resources\\templates\\sale-contract-party-a-stamp.jpg";
+    private static final String CONTRACT_STAMP_PATH = "D:\\renren-fast-vue\\renren-fast\\src\\main\\resources\\templates\\sale-contract-party-a-stamp.png";
     @Autowired
     private ErpSaleOrderItemDao erpSaleOrderItemDao;
     @Autowired
