@@ -37,6 +37,7 @@ import org.springframework.web.client.RestTemplate;
 @Service("erpWecomService")
 public class ErpWecomServiceImpl implements ErpWecomService {
   private static final String WECOM_API = "https://qyapi.weixin.qq.com";
+  private static final String SALE_CONTRACT_BASE_URL = "http://218.202.240.118:8888/renren-fast/erp/saleorder/contract/";
   private static final String SALE_UPLOAD_PORTAL_BASE_URL = "http://218.202.240.118:3001/#/sale-upload/";
 
   @Value("${erp.wecom.corp-id:}")
@@ -272,7 +273,7 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     if (StringUtils.isBlank(order.getContractToken())) {
       throw new RuntimeException("销售单上传链接不存在");
     }
-    String portalUrl = SALE_UPLOAD_PORTAL_BASE_URL + order.getContractToken();
+    String portalUrl = SALE_CONTRACT_BASE_URL + order.getContractToken();
     String noticeContent = buildSaleUploadNoticeContent(order, partner, portalUrl);
     JSONObject text = new JSONObject();
     text.put("content", noticeContent);
@@ -330,7 +331,7 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     }
     ErpPartnerEntity partner = order.getSecondaryPartnerId() == null ? null : erpPartnerDao.selectById(order.getSecondaryPartnerId());
     Date now = new Date();
-    String portalUrl = StringUtils.isBlank(order.getContractToken()) ? null : SALE_UPLOAD_PORTAL_BASE_URL + order.getContractToken();
+    String portalUrl = StringUtils.isBlank(order.getContractToken()) ? null : SALE_CONTRACT_BASE_URL + order.getContractToken();
     ErpSaleUploadNoticeEntity notice = buildSaleUploadNotice(order, partner, partner == null ? null : StringUtils.defaultIfBlank(partner.getWecomChatOwner(), defaultSender), portalUrl, null, userId, now);
     notice.setStatus(9);
     notice.setErrorMessage(StringUtils.abbreviate(StringUtils.defaultString(message, "发送失败"), 500));
