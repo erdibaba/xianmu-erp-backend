@@ -130,7 +130,7 @@ try {
     $stampAnchor = $sheet.Cells.Item($bottomPartyRow, 3)
     $stampLeft = [double]$stampAnchor.Left + 18
     $stampTop = [double]$stampAnchor.Top - 22
-    $stampSize = 112
+    $stampSize = 224
     $stamp = $sheet.Shapes.AddPicture($StampPath, $false, $true, $stampLeft, $stampTop, $stampSize, $stampSize)
     $stamp.Placement = 1
   }
