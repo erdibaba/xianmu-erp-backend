@@ -1,0 +1,25 @@
+-- 销售单客户上传链接企业微信通知
+CREATE TABLE IF NOT EXISTS erp_sale_upload_notice (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  sale_order_id BIGINT NOT NULL COMMENT '销售单ID',
+  order_no VARCHAR(64) DEFAULT NULL COMMENT '销售单号',
+  contract_no VARCHAR(100) DEFAULT NULL COMMENT '合同号',
+  partner_id BIGINT DEFAULT NULL COMMENT '二批商往来单位ID',
+  partner_name VARCHAR(200) DEFAULT NULL COMMENT '二批商名称',
+  chat_id VARCHAR(100) DEFAULT NULL COMMENT '企业微信客户群ID',
+  chat_name VARCHAR(200) DEFAULT NULL COMMENT '企业微信客户群名称',
+  sender VARCHAR(100) DEFAULT NULL COMMENT '企业微信群发发送人UserID',
+  portal_url VARCHAR(500) DEFAULT NULL COMMENT '客户上传中心链接',
+  content TEXT COMMENT '通知内容',
+  wecom_msg_id VARCHAR(100) DEFAULT NULL COMMENT '企业微信群发任务ID',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '通知状态：1已创建待成员确认 2已发送 9失败',
+  error_message VARCHAR(500) DEFAULT NULL COMMENT '企业微信接口返回信息或错误原因',
+  create_user_id BIGINT DEFAULT NULL COMMENT '创建人ID',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  KEY idx_erp_sale_upload_notice_order (sale_order_id),
+  KEY idx_erp_sale_upload_notice_partner (partner_id),
+  KEY idx_erp_sale_upload_notice_status (status),
+  KEY idx_erp_sale_upload_notice_msg (wecom_msg_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售单客户上传链接企业微信通知任务';

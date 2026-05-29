@@ -7,12 +7,14 @@ import io.renren.modules.erp.dao.ErpPartnerDao;
 import io.renren.modules.erp.dao.ErpPresaleConfirmDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
 import io.renren.modules.erp.dao.ErpSaleOrderDao;
+import io.renren.modules.erp.dao.ErpSaleUploadNoticeDao;
 import io.renren.modules.erp.dao.ErpShipNoticeDao;
 import io.renren.modules.erp.dao.ErpWecomGroupDao;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
 import io.renren.modules.erp.entity.ErpPresaleConfirmEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
+import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.entity.ErpShipNoticeEntity;
 import io.renren.modules.erp.entity.ErpWecomGroupEntity;
 import io.renren.modules.erp.service.ErpWecomService;
@@ -35,6 +37,7 @@ import org.springframework.web.client.RestTemplate;
 @Service("erpWecomService")
 public class ErpWecomServiceImpl implements ErpWecomService {
   private static final String WECOM_API = "https://qyapi.weixin.qq.com";
+  private static final String SALE_UPLOAD_PORTAL_BASE_URL = "http://192.168.0.36:8001/#/sale-upload/";
 
   @Value("${erp.wecom.corp-id:}")
   private String corpId;
@@ -57,6 +60,8 @@ public class ErpWecomServiceImpl implements ErpWecomService {
   private ErpPresaleConfirmDao erpPresaleConfirmDao;
   @Autowired
   private ErpSaleOrderDao erpSaleOrderDao;
+  @Autowired
+  private ErpSaleUploadNoticeDao erpSaleUploadNoticeDao;
 
   private final RestTemplate restTemplate = new RestTemplate();
   private String cachedAccessToken;
@@ -165,6 +170,38 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     return notices;
   }
 
+  @Override
+  public ErpSaleUploadNoticeEntity sendSaleUploadNotice(Long saleOrderId, boolean force, Long userId) {
+    if (saleOrderId == null || saleOrderId <= 0) {
+      throw new RuntimeException("请选择销售单");
+    }
+    ErpSaleOrderEntity order = erpSaleOrderDao.selectById(saleOrderId);
+    if (order == null) {
+      throw new RuntimeException("销售单不存在");
+    }
+    if (!force) {
+      ErpSaleUploadNoticeEntity existing = findExistingSuccessSaleUploadNotice(order.getId());
+      if (existing != null) {
+        return existing;
+      }
+    }
+    try {
+      return sendSaleUploadNoticeToPartner(order, userId);
+    } catch (RuntimeException e) {
+      saveFailedSaleUploadNotice(order, e.getMessage(), userId);
+      throw e;
+    }
+  }
+
+  @Override
+  public ErpSaleUploadNoticeEntity autoSendSaleUploadNotice(Long saleOrderId, Long userId) {
+    try {
+      return sendSaleUploadNotice(saleOrderId, false, userId);
+    } catch (Exception ignored) {
+      return null;
+    }
+  }
+
   private ErpShipNoticeEntity sendShipNoticeToPartner(ErpPresaleOrderEntity presale, ErpPresaleConfirmEntity confirm, Long partnerId, String content, Long userId) {
     ErpPartnerEntity partner = erpPartnerDao.selectById(partnerId);
     if (partner == null) {
@@ -215,6 +252,100 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     notice.setUpdateTime(now);
     erpShipNoticeDao.insert(notice);
     return notice;
+  }
+
+  private ErpSaleUploadNoticeEntity sendSaleUploadNoticeToPartner(ErpSaleOrderEntity order, Long userId) {
+    if (order.getSecondaryPartnerId() == null) {
+      throw new RuntimeException("销售单未关联二批商");
+    }
+    ErpPartnerEntity partner = erpPartnerDao.selectById(order.getSecondaryPartnerId());
+    if (partner == null) {
+      throw new RuntimeException("二批商不存在");
+    }
+    if (StringUtils.isBlank(partner.getWecomChatId())) {
+      throw new RuntimeException("该二批商未绑定企业微信客户群");
+    }
+    String sender = StringUtils.defaultIfBlank(partner.getWecomChatOwner(), defaultSender);
+    if (StringUtils.isBlank(sender)) {
+      throw new RuntimeException("请配置企业微信群主或默认发送人");
+    }
+    if (StringUtils.isBlank(order.getContractToken())) {
+      throw new RuntimeException("销售单上传链接不存在");
+    }
+    String portalUrl = SALE_UPLOAD_PORTAL_BASE_URL + order.getContractToken();
+    String noticeContent = buildSaleUploadNoticeContent(order, partner, portalUrl);
+    JSONObject text = new JSONObject();
+    text.put("content", noticeContent);
+    JSONObject body = new JSONObject();
+    body.put("chat_type", "group");
+    body.put("sender", sender);
+    body.put("allow_select", false);
+    JSONArray chatIds = new JSONArray();
+    chatIds.add(partner.getWecomChatId());
+    body.put("chat_id_list", chatIds);
+    body.put("text", text);
+    JSONObject response = post("/cgi-bin/externalcontact/add_msg_template", body);
+
+    Date now = new Date();
+    ErpSaleUploadNoticeEntity notice = buildSaleUploadNotice(order, partner, sender, portalUrl, noticeContent, userId, now);
+    notice.setWecomMsgId(response.getString("msgid"));
+    notice.setStatus(1);
+    notice.setErrorMessage(response.getString("errmsg"));
+    erpSaleUploadNoticeDao.insert(notice);
+    return notice;
+  }
+
+  private ErpSaleUploadNoticeEntity buildSaleUploadNotice(ErpSaleOrderEntity order, ErpPartnerEntity partner, String sender, String portalUrl, String content, Long userId, Date now) {
+    ErpSaleUploadNoticeEntity notice = new ErpSaleUploadNoticeEntity();
+    notice.setSaleOrderId(order.getId());
+    notice.setOrderNo(order.getOrderNo());
+    notice.setContractNo(order.getContractNo());
+    notice.setPartnerId(partner == null ? order.getSecondaryPartnerId() : partner.getId());
+    notice.setPartnerName(partner == null ? order.getSecondaryPartnerName() : partner.getPartnerName());
+    notice.setChatId(partner == null ? null : partner.getWecomChatId());
+    notice.setChatName(partner == null ? null : partner.getWecomChatName());
+    notice.setSender(sender);
+    notice.setPortalUrl(portalUrl);
+    notice.setContent(content);
+    notice.setCreateUserId(userId);
+    notice.setCreateTime(now);
+    notice.setUpdateTime(now);
+    return notice;
+  }
+
+  private ErpSaleUploadNoticeEntity findExistingSuccessSaleUploadNotice(Long saleOrderId) {
+    if (saleOrderId == null) {
+      return null;
+    }
+    return erpSaleUploadNoticeDao.selectOne(new QueryWrapper<ErpSaleUploadNoticeEntity>()
+        .eq("sale_order_id", saleOrderId)
+        .in("status", 1, 2)
+        .orderByDesc("create_time", "id")
+        .last("limit 1"));
+  }
+
+  private void saveFailedSaleUploadNotice(ErpSaleOrderEntity order, String message, Long userId) {
+    if (order == null || order.getId() == null) {
+      return;
+    }
+    ErpPartnerEntity partner = order.getSecondaryPartnerId() == null ? null : erpPartnerDao.selectById(order.getSecondaryPartnerId());
+    Date now = new Date();
+    String portalUrl = StringUtils.isBlank(order.getContractToken()) ? null : SALE_UPLOAD_PORTAL_BASE_URL + order.getContractToken();
+    ErpSaleUploadNoticeEntity notice = buildSaleUploadNotice(order, partner, partner == null ? null : StringUtils.defaultIfBlank(partner.getWecomChatOwner(), defaultSender), portalUrl, null, userId, now);
+    notice.setStatus(9);
+    notice.setErrorMessage(StringUtils.abbreviate(StringUtils.defaultString(message, "发送失败"), 500));
+    erpSaleUploadNoticeDao.insert(notice);
+  }
+
+  private String buildSaleUploadNoticeContent(ErpSaleOrderEntity order, ErpPartnerEntity partner, String portalUrl) {
+    StringBuilder builder = new StringBuilder();
+    builder.append("【鲜牧供应链合同确认】\n");
+    builder.append("客户：").append(StringUtils.defaultIfBlank(partner.getPartnerName(), "-")).append("\n");
+    builder.append("销售单号：").append(StringUtils.defaultIfBlank(order.getOrderNo(), "-")).append("\n");
+    builder.append("合同号：").append(StringUtils.defaultIfBlank(order.getContractNo(), "-")).append("\n");
+    builder.append("请点击以下链接下载合同，并按流程上传盖章合同、打款凭证：\n");
+    builder.append(portalUrl);
+    return builder.toString();
   }
 
   private ErpShipNoticeEntity findExistingSuccessNotice(Long presaleOrderId, Long partnerId, Date expectedArrivalDate) {

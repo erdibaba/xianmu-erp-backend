@@ -1,6 +1,7 @@
 package io.renren.modules.erp.controller;
 
 import io.renren.common.utils.R;
+import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.service.ErpWecomService;
 import io.renren.modules.sys.controller.AbstractController;
 import java.util.ArrayList;
@@ -45,6 +46,19 @@ public class ErpWecomController extends AbstractController {
     }
     String content = params.get("content") == null ? null : params.get("content").toString();
     return R.ok().put("list", erpWecomService.sendShipNotice(presaleOrderId, partnerIds, content, getUserId()));
+  }
+
+  @PostMapping("/sale-upload-notice/send")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R sendSaleUploadNotice(@RequestBody Map<String, Object> params) {
+    try {
+      Long saleOrderId = toLong(params.get("saleOrderId"));
+      boolean force = params.get("force") != null && Boolean.parseBoolean(String.valueOf(params.get("force")));
+      ErpSaleUploadNoticeEntity notice = erpWecomService.sendSaleUploadNotice(saleOrderId, force, getUserId());
+      return R.ok().put("notice", notice);
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   private Long toLong(Object value) {

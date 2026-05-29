@@ -39,6 +39,7 @@ import io.renren.modules.erp.dao.ErpSaleOrderFileDao;
 import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptItemDao;
+import io.renren.modules.erp.dao.ErpSaleUploadNoticeDao;
 import io.renren.modules.erp.dao.ErpStockLedgerDao;
 import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
@@ -52,6 +53,7 @@ import io.renren.modules.erp.entity.ErpSaleOrderFileEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
+import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
@@ -142,6 +144,8 @@ implements ErpSaleOrderService {
     private SysUserService sysUserService;
     @Autowired
     private ErpWecomService erpWecomService;
+    @Autowired
+    private ErpSaleUploadNoticeDao erpSaleUploadNoticeDao;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -715,6 +719,9 @@ implements ErpSaleOrderService {
         }
         this.saveItems(order, preparedItems, now);
         this.refreshOrderStatus(order.getId());
+        if (create) {
+            this.erpWecomService.autoSendSaleUploadNotice(order.getId(), userId);
+        }
         this.autoSendShipNoticeForConfirmedPresaleLink(order, userId);
     }
 
@@ -1401,6 +1408,30 @@ implements ErpSaleOrderService {
         order.setStatus(this.computeStatus(order, files));
         order.setContractUrl(CONTRACT_BASE_URL + order.getContractToken());
         order.setBuyerPortalUrl(PORTAL_BASE_URL + order.getContractToken());
+        this.enrichUploadNoticeDisplay(order);
+    }
+
+    private void enrichUploadNoticeDisplay(ErpSaleOrderEntity order) {
+        QueryWrapper<ErpSaleUploadNoticeEntity> wrapper = new QueryWrapper<ErpSaleUploadNoticeEntity>()
+                .eq("sale_order_id", order.getId())
+                .orderByDesc("create_time", "id")
+                .last("limit 1");
+        ErpSaleUploadNoticeEntity notice = this.erpSaleUploadNoticeDao.selectOne(wrapper);
+        if (notice == null) {
+            order.setUploadNoticeStatus(0);
+            order.setUploadNoticeStatusText("未发送");
+            order.setUploadNoticeTime(null);
+            order.setUploadNoticeErrorMessage(null);
+            return;
+        }
+        order.setUploadNoticeStatus(this.defaultFlag(notice.getStatus()));
+        order.setUploadNoticeTime(notice.getCreateTime());
+        order.setUploadNoticeErrorMessage(notice.getErrorMessage());
+        if (this.defaultFlag(notice.getStatus()) == 9) {
+            order.setUploadNoticeStatusText("发送失败");
+        } else {
+            order.setUploadNoticeStatusText("已发送");
+        }
     }
 
     private int computeStatus(ErpSaleOrderEntity order, List<ErpSaleOrderFileEntity> files) {

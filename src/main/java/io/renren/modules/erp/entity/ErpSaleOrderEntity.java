@@ -77,4 +77,16 @@ public class ErpSaleOrderEntity implements Serializable {
   @TableField(exist = false)
   private ErpSaleOutboundReceiptEntity outboundReceipt;
 
+  @TableField(exist = false)
+  private Integer uploadNoticeStatus;
+
+  @TableField(exist = false)
+  private String uploadNoticeStatusText;
+
+  @TableField(exist = false)
+  private Date uploadNoticeTime;
+
+  @TableField(exist = false)
+  private String uploadNoticeErrorMessage;
+
 }

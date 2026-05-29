@@ -1,6 +1,7 @@
 package io.renren.modules.erp.service;
 
 import io.renren.modules.erp.entity.ErpShipNoticeEntity;
+import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.entity.ErpWecomGroupEntity;
 import java.util.List;
 
@@ -14,4 +15,8 @@ public interface ErpWecomService {
   List<ErpShipNoticeEntity> sendShipNotice(Long presaleOrderId, List<Long> partnerIds, String content, Long userId);
 
   List<ErpShipNoticeEntity> autoSendShipNoticeToLinkedFutures(Long presaleOrderId, Long userId);
+
+  ErpSaleUploadNoticeEntity sendSaleUploadNotice(Long saleOrderId, boolean force, Long userId);
+
+  ErpSaleUploadNoticeEntity autoSendSaleUploadNotice(Long saleOrderId, Long userId);
 }
