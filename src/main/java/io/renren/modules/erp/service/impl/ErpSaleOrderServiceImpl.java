@@ -116,6 +116,7 @@ implements ErpSaleOrderService {
     private static final String UPLOAD_BASE_DIR = "D:\\renren-fast-vue\\renren-fast\\uploads\\saleorder";
     private static final String CONTRACT_TEMPLATE_PATH = "D:\\renren-fast-vue\\renren-fast\\src\\main\\resources\\templates\\sale-contract-template.xlsx";
     private static final String CONTRACT_RENDER_SCRIPT_PATH = "D:\\renren-fast-vue\\renren-fast\\scripts\\render-sale-contract.ps1";
+    private static final String CONTRACT_STAMP_PATH = "D:\\renren-fast-vue\\renren-fast\\src\\main\\resources\\templates\\sale-contract-party-a-stamp.jpg";
     @Autowired
     private ErpSaleOrderItemDao erpSaleOrderItemDao;
     @Autowired
@@ -608,7 +609,7 @@ implements ErpSaleOrderService {
             payload.put("coldStorageFreeDays", this.resolveColdStorageFreeDays(order));
             payload.put("rows", rows);
             Files.write(payloadPath, JSON.toJSONString(payload, SerializerFeature.WriteMapNullValue).getBytes(StandardCharsets.UTF_8));
-            this.runContractRenderScript(templateFile, renderScriptFile, payloadPath.toFile(), outputXlsx.toFile(), outputPdf.toFile());
+            this.runContractRenderScript(templateFile, renderScriptFile, payloadPath.toFile(), outputXlsx.toFile(), outputPdf.toFile(), new File(CONTRACT_STAMP_PATH));
             if (!Files.exists(outputXlsx) || !Files.exists(outputPdf)) {
                 throw new RuntimeException("合同文件未生成成功");
             }
@@ -619,8 +620,8 @@ implements ErpSaleOrderService {
         }
     }
 
-    private void runContractRenderScript(File templateFile, File renderScriptFile, File payloadFile, File outputXlsx, File outputPdf) throws Exception {
-        ProcessBuilder builder = new ProcessBuilder(new String[]{"powershell", "-ExecutionPolicy", "Bypass", "-File", renderScriptFile.getAbsolutePath(), "-TemplatePath", templateFile.getAbsolutePath(), "-PayloadPath", payloadFile.getAbsolutePath(), "-OutputXlsx", outputXlsx.getAbsolutePath(), "-OutputPdf", outputPdf.getAbsolutePath()});
+    private void runContractRenderScript(File templateFile, File renderScriptFile, File payloadFile, File outputXlsx, File outputPdf, File stampFile) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(new String[]{"powershell", "-ExecutionPolicy", "Bypass", "-File", renderScriptFile.getAbsolutePath(), "-TemplatePath", templateFile.getAbsolutePath(), "-PayloadPath", payloadFile.getAbsolutePath(), "-OutputXlsx", outputXlsx.getAbsolutePath(), "-OutputPdf", outputPdf.getAbsolutePath(), "-StampPath", stampFile.getAbsolutePath()});
         builder.redirectErrorStream(true);
         Process process = builder.start();
         String log = new String(Files.readAllBytes(this.copyProcessOutput(process)), StandardCharsets.UTF_8);

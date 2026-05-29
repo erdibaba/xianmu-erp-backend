@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory = $true)][string]$TemplatePath,
   [Parameter(Mandatory = $true)][string]$PayloadPath,
   [Parameter(Mandatory = $true)][string]$OutputXlsx,
-  [Parameter(Mandatory = $true)][string]$OutputPdf
+  [Parameter(Mandatory = $true)][string]$OutputPdf,
+  [Parameter(Mandatory = $false)][string]$StampPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -124,6 +125,15 @@ try {
   $sheet.Cells.Item($spotFeeValueRow, 4).Value2 = [int]$coldStorageFreeDays
   $sheet.Cells.Item($spotFeeHeaderRow, 5).Value2 = $spotFeeRangeText
   $sheet.Cells.Item($bottomPartyRow, 7).Value2 = ('           ' + ([string][char]0x4E59) + ([string][char]0x65B9) + ':' + [string]$payload.secondaryPartnerName)
+
+  if (-not [string]::IsNullOrWhiteSpace($StampPath) -and (Test-Path -LiteralPath $StampPath)) {
+    $stampAnchor = $sheet.Cells.Item($bottomPartyRow, 3)
+    $stampLeft = [double]$stampAnchor.Left + 18
+    $stampTop = [double]$stampAnchor.Top - 22
+    $stampSize = 112
+    $stamp = $sheet.Shapes.AddPicture($StampPath, $false, $true, $stampLeft, $stampTop, $stampSize, $stampSize)
+    $stamp.Placement = 1
+  }
 
   $outputDir = Split-Path -Parent $OutputPdf
   if (-not (Test-Path -LiteralPath $outputDir)) {
