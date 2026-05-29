@@ -111,8 +111,8 @@ implements ErpSaleOrderService {
     private static final String FILE_TYPE_FUNDER_PAYMENT = "FUNDER_PAYMENT_PROOF";
     private static final String FILE_TYPE_OUTBOUND_RECEIPT = "OUTBOUND_RECEIPT";
     private static final String FILE_TYPE_OUTBOUND_ATTACHMENT = "OUTBOUND_ATTACHMENT";
-    private static final String CONTRACT_BASE_URL = "http://192.168.0.36:8080/renren-fast/erp/saleorder/contract/";
-    private static final String PORTAL_BASE_URL = "http://192.168.0.36:8001/#/sale-upload/";
+    private static final String CONTRACT_BASE_URL = "http://218.202.240.118:8888/renren-fast/erp/saleorder/contract/";
+    private static final String PORTAL_BASE_URL = "http://218.202.240.118:3001/#/sale-upload/";
     private static final String UPLOAD_BASE_DIR = "D:\\renren-fast-vue\\renren-fast\\uploads\\saleorder";
     private static final String CONTRACT_TEMPLATE_PATH = "D:\\renren-fast-vue\\renren-fast\\src\\main\\resources\\templates\\sale-contract-template.xlsx";
     private static final String CONTRACT_RENDER_SCRIPT_PATH = "D:\\renren-fast-vue\\renren-fast\\scripts\\render-sale-contract.ps1";

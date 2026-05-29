@@ -37,7 +37,7 @@ import org.springframework.web.client.RestTemplate;
 @Service("erpWecomService")
 public class ErpWecomServiceImpl implements ErpWecomService {
   private static final String WECOM_API = "https://qyapi.weixin.qq.com";
-  private static final String SALE_UPLOAD_PORTAL_BASE_URL = "http://192.168.0.36:8001/#/sale-upload/";
+  private static final String SALE_UPLOAD_PORTAL_BASE_URL = "http://218.202.240.118:3001/#/sale-upload/";
 
   @Value("${erp.wecom.corp-id:}")
   private String corpId;
