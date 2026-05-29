@@ -24,6 +24,10 @@ public class ErpWarehouseEntity implements Serializable {
   private Integer freeStorageDays;
   private BigDecimal dailyStorageFee;
   private BigDecimal dailyColdFee;
+  private BigDecimal frozenStorageFee;
+  private BigDecimal chilledStorageFee;
+  private BigDecimal frozenColdFee;
+  private BigDecimal chilledColdFee;
   private String feeUnit;
   private Integer status;
   private String remark;
