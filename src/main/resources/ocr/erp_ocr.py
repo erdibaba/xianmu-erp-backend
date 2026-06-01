@@ -23,10 +23,11 @@ DOC_STAGE_ESTIMATE = "ESTIMATE"
 DOC_STAGE_CONFIRMED = "CONFIRMED"
 
 
-def load_image_items(file_path):
+def load_image_items(file_path, ocr=None):
     from rapidocr_onnxruntime import RapidOCR
 
-    ocr = RapidOCR()
+    if ocr is None:
+        ocr = RapidOCR()
     result, _ = ocr(str(file_path))
     if not result:
         return [], []
@@ -63,9 +64,11 @@ def load_pdf_text(file_path):
 
 def load_pdf_image_items(file_path):
     import pypdfium2 as pdfium
+    from rapidocr_onnxruntime import RapidOCR
 
     all_items = []
     all_lines = []
+    ocr = RapidOCR()
     with tempfile.TemporaryDirectory() as temp_dir:
         pdf = pdfium.PdfDocument(str(file_path))
         for page_index in range(len(pdf)):
@@ -73,7 +76,7 @@ def load_pdf_image_items(file_path):
             image = page.render(scale=2).to_pil()
             image_path = Path(temp_dir) / f"page-{page_index + 1}.png"
             image.save(image_path)
-            items, lines = load_image_items(image_path)
+            items, lines = load_image_items(image_path, ocr)
             all_items.extend(items)
             all_lines.extend(lines)
     return all_items, all_lines
