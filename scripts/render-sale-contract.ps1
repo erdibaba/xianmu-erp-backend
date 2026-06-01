@@ -91,6 +91,7 @@ try {
     $sheet.Cells.Item($rowIndex, 5).Value2 = [int]$row.boxes
     $sheet.Cells.Item($rowIndex, 6).Value2 = [double]$row.quantityKg
     $sheet.Cells.Item($rowIndex, 7).Value2 = [double]$row.salePriceKg
+    $sheet.Cells.Item($rowIndex, 11).NumberFormat = '@'
     $sheet.Cells.Item($rowIndex, 11).Value2 = [string]$row.portCold
     $sheet.Cells.Item($rowIndex, 12).Value2 = [string]$row.arrivalText
     $sheet.Cells.Item($rowIndex, 8).Formula = "=J$rowIndex/1.09"
