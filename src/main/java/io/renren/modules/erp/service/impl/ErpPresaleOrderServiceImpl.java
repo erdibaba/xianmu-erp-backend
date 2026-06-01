@@ -195,14 +195,12 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     if (draft == null || draft.getItemList() == null) {
       return;
     }
+    Date now = new Date();
     for (ErpRecognizedOrderItemVo item : draft.getItemList()) {
       if (item == null) {
         continue;
       }
-      ErpProductEntity product = resolveProduct(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
-      if (product == null) {
-        continue;
-      }
+      ensureConfirmProduct(item, draft.getBrandName(), now);
     }
   }
 
@@ -429,7 +427,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       if (StringUtils.isBlank(item.getSourceProductCode()) && StringUtils.isBlank(item.getProductCode())) {
         continue;
       }
-      enrichConfirmItem(item);
+      enrichConfirmItem(item, confirm.getBrandName(), now);
       item.setConfirmId(confirm.getId());
       item.setLineNo(lineNo++);
       item.setCreateTime(now);
@@ -502,13 +500,6 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   private void enrichPresaleItem(ErpPresaleOrderItemEntity item) {
-    ErpProductEntity product = resolveProduct(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
-    if (product != null) {
-      item.setProductId(product.getId());
-      item.setProductCode(product.getProductCode());
-      item.setProductName(product.getProductName());
-      item.setProductNameEn(product.getProductNameEn());
-    }
     if (item.getQuantityKg() == null && item.getQuantityTon() != null) {
       item.setQuantityKg(scale(item.getQuantityTon().multiply(new BigDecimal("1000"))));
     }
@@ -520,8 +511,17 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     }
   }
 
-  private void enrichConfirmItem(ErpPresaleConfirmItemEntity item) {
+  private void enrichConfirmItem(ErpPresaleConfirmItemEntity item, String brandName, Date now) {
     ErpProductEntity product = resolveProduct(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
+    if (product == null) {
+      ErpRecognizedOrderItemVo recognizedItem = new ErpRecognizedOrderItemVo();
+      recognizedItem.setProductCode(item.getProductCode());
+      recognizedItem.setSourceProductCode(item.getSourceProductCode());
+      recognizedItem.setProductName(item.getProductName());
+      recognizedItem.setProductNameEn(item.getProductNameEn());
+      recognizedItem.setUnit(item.getUnit());
+      product = ensureConfirmProduct(recognizedItem, brandName, now);
+    }
     if (product != null) {
       syncProductNamesFromConfirmItem(product, item);
       item.setProductId(product.getId());
@@ -652,6 +652,82 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     if (brand != null) {
       order.setBrandName(brand.getPartnerName());
     }
+  }
+
+  private ErpProductEntity ensureConfirmProduct(ErpRecognizedOrderItemVo item, String brandName, Date now) {
+    String sourceCode = StringUtils.trimToEmpty(firstNonBlank(item.getSourceProductCode(), item.getProductCode()));
+    String productCode = normalizeMasterProductCode(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
+    if (StringUtils.isBlank(productCode) || productCode.contains("/")) {
+      return null;
+    }
+    ErpProductEntity product = resolveProduct(productCode);
+    if (product == null && StringUtils.isNotBlank(sourceCode)) {
+      product = resolveProduct(sourceCode);
+    }
+    if (product == null) {
+      product = new ErpProductEntity();
+      product.setProductCode(productCode);
+      product.setAliasCodes(buildAliasCodes(productCode, sourceCode));
+      product.setProductName(StringUtils.trimToEmpty(item.getProductName()));
+      product.setProductNameEn(StringUtils.trimToEmpty(item.getProductNameEn()));
+      product.setUnit(StringUtils.defaultIfBlank(item.getUnit(), "KG"));
+      product.setBrand(StringUtils.trimToEmpty(brandName));
+      product.setStatus(1);
+      product.setCreateTime(now);
+      product.setUpdateTime(now);
+      erpProductDao.insert(product);
+      return product;
+    }
+    boolean needUpdate = false;
+    String aliasCodes = buildAliasCodes(product.getAliasCodes(), productCode, sourceCode);
+    if (StringUtils.isNotBlank(aliasCodes) && !StringUtils.equals(StringUtils.trimToEmpty(product.getAliasCodes()), aliasCodes)) {
+      product.setAliasCodes(aliasCodes);
+      needUpdate = true;
+    }
+    String recognizedName = StringUtils.trimToEmpty(item.getProductName());
+    String recognizedNameEn = StringUtils.trimToEmpty(item.getProductNameEn());
+    if (StringUtils.isBlank(product.getProductName()) && StringUtils.isNotBlank(recognizedName)) {
+      product.setProductName(recognizedName);
+      needUpdate = true;
+    }
+    if (StringUtils.isNotBlank(recognizedNameEn) && !StringUtils.equals(StringUtils.trimToEmpty(product.getProductNameEn()), recognizedNameEn)) {
+      product.setProductNameEn(recognizedNameEn);
+      needUpdate = true;
+    }
+    if (StringUtils.isBlank(product.getBrand()) && StringUtils.isNotBlank(brandName)) {
+      product.setBrand(brandName);
+      needUpdate = true;
+    }
+    if (needUpdate) {
+      product.setUpdateTime(now);
+      erpProductDao.updateById(product);
+    }
+    return product;
+  }
+
+  private String normalizeMasterProductCode(String code) {
+    if (StringUtils.isBlank(code)) {
+      return "";
+    }
+    return StringUtils.trimToEmpty(code).replaceAll("[A-Za-z]+$", "");
+  }
+
+  private String buildAliasCodes(String... codes) {
+    List<String> aliases = new ArrayList<String>();
+    for (String code : codes) {
+      if (StringUtils.isBlank(code)) {
+        continue;
+      }
+      String[] parts = code.split(",");
+      for (String part : parts) {
+        String alias = StringUtils.trimToEmpty(part);
+        if (StringUtils.isBlank(alias) || aliases.contains(alias)) {
+          continue;
+        }
+        aliases.add(alias);
+      }
+    }
+    return StringUtils.join(aliases, ",");
   }
 
   private void fillCustomerPartner(ErpPresaleOrderEntity order) {

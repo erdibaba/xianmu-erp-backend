@@ -40,6 +40,7 @@ public class ErpProductServiceImpl extends ServiceImpl<ErpProductDao, ErpProduct
     QueryWrapper<ErpProductEntity> wrapper = new QueryWrapper<>();
     if (StringUtils.isNotBlank(keyword)) {
       wrapper.and(w -> w.like("product_code", keyword)
+          .or().like("alias_codes", keyword)
           .or().like("product_name", keyword)
           .or().like("product_name_en", keyword)
           .or().like("brand", keyword));

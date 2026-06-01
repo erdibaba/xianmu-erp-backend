@@ -276,13 +276,14 @@ def parse_presale_pdf(text):
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     item_list = []
     idx = 0
+    item_start_pattern = re.compile(r"^\d+(?:\.\d+)?\s+MT\s+\d{5}")
     while idx < len(lines):
         line = lines[idx]
         combined = line
         cursor = idx + 1
         while cursor < len(lines):
             next_line = lines[cursor]
-            if re.match(r"^\d+(?:\.\d+)?\s+MT\s+\d{5}\s+", next_line):
+            if item_start_pattern.match(next_line):
                 break
             if "TOTAL" in next_line.upper() or "PLACE OF DELIVERY" in next_line.upper():
                 break
@@ -292,14 +293,16 @@ def parse_presale_pdf(text):
                 break
             combined += " " + next_line
             cursor += 1
-        match = re.match(r"^(?P<qty>\d+(?:\.\d+)?)\s+MT\s+(?P<code>\d{5})\s+(?P<desc>.+?)\s+(?P<price>\d+(?:\.\d+)?)\s+CNY/KG$", combined)
+        match = re.match(r"^(?P<qty>\d+(?:\.\d+)?)\s+MT\s+(?P<code>\d{5}(?:\s*/\s*\d{5})*(?:\s*/\s*\d{5})?(?:\s*/)?)(?:\s+)(?P<desc>.+?)\s+(?P<price>\d+(?:\.\d+)?)\s+CNY/KG$", combined)
         if match:
             qty_mt = dec(match.group("qty"))
             price = dec(match.group("price"))
+            product_code = re.sub(r"\s*/\s*", "/", match.group("code").strip())
+            product_code = re.sub(r"/\s+(\d{5})", r"/\1", product_code).rstrip("/")
             product_desc = match.group("desc").strip()
             item_list.append({
-                "productCode": match.group("code"),
-                "sourceProductCode": match.group("code"),
+                "productCode": product_code,
+                "sourceProductCode": product_code,
                 "productNameEn": product_desc,
                 "productSpec": None,
                 "warehouseName": delivery_place or DEFAULT_SALES_WAREHOUSE,
