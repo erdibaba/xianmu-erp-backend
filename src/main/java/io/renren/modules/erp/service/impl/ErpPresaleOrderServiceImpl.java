@@ -316,6 +316,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     if (order.getOrderDate() == null) {
       order.setOrderDate(now);
     }
+    fillCustomerPartner(order);
     fillBrand(order);
     if (StringUtils.isBlank(order.getEstimateFileName()) && StringUtils.isNotBlank(order.getEstimateFilePath())) {
       order.setEstimateFileName(new File(order.getEstimateFilePath()).getName());
@@ -650,6 +651,16 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     ErpPartnerEntity brand = erpPartnerDao.selectById(order.getBrandId());
     if (brand != null) {
       order.setBrandName(brand.getPartnerName());
+    }
+  }
+
+  private void fillCustomerPartner(ErpPresaleOrderEntity order) {
+    if (order.getCustomerPartnerId() == null) {
+      return;
+    }
+    ErpPartnerEntity partner = erpPartnerDao.selectById(order.getCustomerPartnerId());
+    if (partner != null) {
+      order.setCustomerReference(partner.getPartnerName());
     }
   }
 
