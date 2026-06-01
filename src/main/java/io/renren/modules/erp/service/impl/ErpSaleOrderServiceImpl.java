@@ -543,19 +543,24 @@ implements ErpSaleOrderService {
         this.enrichOrderDisplay(order, true);
         List<ErpSaleOrderItemEntity> displayItems = SALE_TYPE_SPOT.equals(order.getSaleType()) ? order.getAllocationItemList() : order.getItemList();
         StringBuilder html = new StringBuilder();
-        html.append("<html><head><meta charset='UTF-8'><title>销售合同</title>").append("<style>body{font-family:Arial,'Microsoft YaHei';padding:24px;color:#222;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #dcdfe6;padding:8px;font-size:14px;}th{background:#f5f7fa;}h2{margin:0 0 12px;} .meta{line-height:28px;}</style>").append("</head><body>");
+        html.append("<html><head><meta charset='UTF-8'><title>销售合同</title>").append("<style>body{font-family:Arial,'Microsoft YaHei';padding:24px;color:#222;}table{width:100%;min-width:1320px;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #dcdfe6;padding:8px;font-size:14px;}th{background:#f5f7fa;}h2{margin:0 0 12px;} .meta{line-height:28px;}.table-wrap{overflow-x:auto;}.num{text-align:right;white-space:nowrap;}</style>").append("</head><body>");
         html.append("<h2>销售合同</h2>");
         html.append("<div class='meta'>合同号：").append(this.escapeHtml(order.getContractNo())).append("</div>");
         html.append("<div class='meta'>销售单号：").append(this.escapeHtml(order.getOrderNo())).append("</div>");
         html.append("<div class='meta'>类型：").append(SALE_TYPE_SPOT.equals(order.getSaleType()) ? "现货单" : "期货单").append("</div>");
         html.append("<div class='meta'>二批商：").append(this.escapeHtml(order.getSecondaryPartnerName())).append("</div>");
         html.append("<div class='meta'>仓库：").append(this.escapeHtml(StringUtils.defaultString((String)order.getWarehouseName(), (String)"-"))).append("</div>");
-        html.append("<table><thead><tr><th>序号</th><th>产品编码</th><th>中文名称</th><th>英文名称</th><th>柜号</th><th>箱数</th></tr></thead><tbody>");
+        html.append("<div class='table-wrap'><table><thead><tr><th>序号</th><th>合同号</th><th>产品编码</th><th>中文名称</th><th>英文名称</th><th>柜号</th><th>厂号</th><th>箱数</th><th>数量/千克</th><th>销售价（元/千克）</th><th>货款金额</th><th>税款金额</th><th>金额（元）</th></tr></thead><tbody>");
         int index = 1;
         for (ErpSaleOrderItemEntity item : displayItems) {
-            html.append("<tr>").append("<td>").append(index++).append("</td>").append("<td>").append(this.escapeHtml(item.getProductCode())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductName())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductNameEn())).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getSourceContainerNo(), "-"))).append("</td>").append("<td>").append(this.defaultInt(item.getBoxes())).append("</td>").append("</tr>");
+            BigDecimal quantityKg = this.defaultDecimal(item.getContractQuantityKg());
+            BigDecimal salePriceKg = this.defaultDecimal(item.getSalePriceKg());
+            BigDecimal totalAmount = quantityKg.multiply(salePriceKg).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal goodsAmount = totalAmount.divide(new BigDecimal("1.09"), 2, RoundingMode.HALF_UP);
+            BigDecimal taxAmount = goodsAmount.multiply(new BigDecimal("0.09")).setScale(2, RoundingMode.HALF_UP);
+            html.append("<tr>").append("<td>").append(index++).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(order.getContractNo(), order.getOrderNo(), "-"))).append("</td>").append("<td>").append(this.escapeHtml(item.getProductCode())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductName())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductNameEn())).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getSourceContainerNo(), "-"))).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getContractFactoryNo(), "-"))).append("</td>").append("<td class='num'>").append(this.defaultInt(item.getBoxes())).append("</td>").append("<td class='num'>").append(this.formatDecimal(quantityKg)).append("</td>").append("<td class='num'>").append(this.formatDecimal(salePriceKg)).append("</td>").append("<td class='num'>").append(this.formatDecimal(goodsAmount)).append("</td>").append("<td class='num'>").append(this.formatDecimal(taxAmount)).append("</td>").append("<td class='num'>").append(this.formatDecimal(totalAmount)).append("</td>").append("</tr>");
         }
-        html.append("</tbody></table>");
+        html.append("</tbody></table></div>");
         html.append("<div style='margin-top:24px;'>请先下载PDF合同并盖章，回传后再进入付款凭证上传流程。</div>");
         html.append("<div style='margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;'>");
         html.append("<a href='").append(CONTRACT_BASE_URL).append("pdf/").append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>下载PDF合同</a>");
@@ -1798,6 +1803,10 @@ implements ErpSaleOrderService {
         return value == null ? 0 : value;
     }
 
+    private BigDecimal defaultDecimal(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
     private String stringValue(Object value) {
         return value == null ? null : value.toString();
     }
@@ -1813,6 +1822,10 @@ implements ErpSaleOrderService {
     private String escapeHtml(String value) {
         String text = StringUtils.defaultString((String)value);
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    private String formatDecimal(BigDecimal value) {
+        return this.defaultDecimal(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private String formatDate(Date date) {
