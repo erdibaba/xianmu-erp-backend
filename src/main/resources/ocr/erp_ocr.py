@@ -354,7 +354,7 @@ def parse_purchase(text):
                 r"^(?P<code>\d{5}[A-Z])\s+"
                 r"(?P<cn>[^\s]+)\s+"
                 r"(?P<en>.+?)\s*"
-                r"(?P<unit>KG|TON|箱|件)\s+"
+                r"(?P<unit>KG|TON|箱|件)\s*"
                 r"(?P<qty>[\d,]+\.\d+)\s+"
                 r"(?P<price>[\d,]+\.\d+)\s+"
                 r"(?P<total>[\d,]+\.\d+)$",
