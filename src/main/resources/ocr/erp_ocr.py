@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import tempfile
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
@@ -58,6 +59,24 @@ def load_pdf_text(file_path):
     for page in reader.pages:
         texts.append(page.extract_text() or "")
     return "\n".join(texts)
+
+
+def load_pdf_image_items(file_path):
+    import pypdfium2 as pdfium
+
+    all_items = []
+    all_lines = []
+    with tempfile.TemporaryDirectory() as temp_dir:
+        pdf = pdfium.PdfDocument(str(file_path))
+        for page_index in range(len(pdf)):
+            page = pdf[page_index]
+            image = page.render(scale=2).to_pil()
+            image_path = Path(temp_dir) / f"page-{page_index + 1}.png"
+            image.save(image_path)
+            items, lines = load_image_items(image_path)
+            all_items.extend(items)
+            all_lines.extend(lines)
+    return all_items, all_lines
 
 
 def dec(value):
@@ -436,10 +455,10 @@ def add_days(date_text, days):
 def parse_packing(text):
     flat_text = normalize_text(text)
     contract_no = first_match(flat_text, r"\b(B\d+/\d+)\b")
-    container_no = first_match(flat_text, r"CONTAINER NO:\s*([A-Z]{4}\d{7})")
+    container_no = first_match(flat_text, r"CONTAINER\s*NO\s*:?\s*([A-Z]{4}\d{7})")
     if not container_no:
         container_no = first_match(flat_text, r"([A-Z]{4}\d{7})\s+[A-Z0-9]+CONTAINER NO:")
-    shelf_life_days = first_match(flat_text, r"EXPIRATION DATES\s+(\d+)\s+DAYS FROM PRODUCTION DATE")
+    shelf_life_days = first_match(flat_text, r"EXPIRATION\s*DATES\s*(\d+)\s*DAYS\s*FROM\s*PRODUCTION\s*DATE")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     item_list = []
     idx = 0
@@ -475,6 +494,9 @@ def parse_packing(text):
         continue
       idx += 1
 
+    if not item_list:
+      item_list = parse_packing_ocr_lines(lines, shelf_life_days or "0")
+
     total_boxes = str(sum(int(item.get("totalBoxes") or 0) for item in item_list))
     total_weight = dec_str(sum((dec(item.get("totalWeight")) or Decimal("0.00")) for item in item_list), "0.00")
     return {
@@ -488,6 +510,64 @@ def parse_packing(text):
         "itemList": item_list
       }
     }
+
+
+def parse_packing_ocr_lines(lines, shelf_life_days):
+    item_list = []
+    production_marker = re.compile(r"PRODUCTION\s*NUMBER", re.I)
+    for idx, line in enumerate(lines):
+      if not production_marker.search(line.replace(" ", "")):
+        continue
+      window = lines[max(0, idx - 8):idx]
+      product_code = None
+      total_boxes = None
+      total_weight = None
+      product_name_en = None
+      for value in reversed(window):
+        compact = re.sub(r"[\s_]+", "", value).upper()
+        if product_code is None and re.match(r"^\d{5}[A-Z]?$", compact):
+          product_code = compact
+          continue
+        if total_boxes is None:
+          box_match = re.match(r"^(\d+)CT$", compact)
+          if box_match:
+            total_boxes = box_match.group(1)
+            continue
+        if total_weight is None and re.match(r"^[\d,]+\.\d+$", compact):
+          total_weight = compact.replace(",", "")
+          continue
+        if product_name_en is None and re.search(r"BEEF|LAMB|MUTTON|VEAL", compact):
+          product_name_en = compact
+      if not product_name_en or not total_boxes or not total_weight:
+        continue
+      batch_list = []
+      line_total_boxes = dec(total_boxes) or Decimal("0")
+      line_total_weight = dec(total_weight) or Decimal("0.00")
+      for batch_line in lines[idx + 1:idx + 12]:
+        if production_marker.search(batch_line.replace(" ", "")):
+          break
+        normalized_batch_line = batch_line.replace("_", " ")
+        for box_count, production_date in re.findall(r"(\d+)\s*CT\s*(\d{4}-\d{2}-\d{2})", normalized_batch_line, re.I):
+          box_count_dec = dec(box_count) or Decimal("0")
+          weight = Decimal("0.00")
+          if line_total_boxes:
+            weight = (line_total_weight * box_count_dec / line_total_boxes).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+          batch_list.append({
+            "productionDate": f"{production_date} 00:00:00",
+            "expiryDate": add_days(production_date, int(shelf_life_days or "0")),
+            "boxCount": box_count,
+            "weight": dec_str(weight, "0.00")
+          })
+      item_list.append({
+        "productCode": product_code,
+        "sourceProductCode": product_code,
+        "productNameEn": product_name_en,
+        "totalBoxes": str(int(dec(total_boxes) or Decimal("0"))),
+        "totalWeight": dec_str(total_weight, "0.00"),
+        "shelfLifeDays": shelf_life_days or "0",
+        "batchList": batch_list
+      })
+    return item_list
 
 
 def is_presale_pdf(text):
@@ -508,6 +588,9 @@ def recognize(file_path, order_type_hint=None):
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         text = load_pdf_text(path)
+        if not text.strip():
+            _, lines = load_pdf_image_items(path)
+            text = "\n".join(lines)
         if is_packing_pdf(text) or order_type_hint == "PACKING":
             result = parse_packing(text)
         elif is_presale_pdf(text):
@@ -516,6 +599,12 @@ def recognize(file_path, order_type_hint=None):
             result = parse_purchase(text)
         else:
             result = parse_presale_pdf(text)
+        if order_type_hint == "PACKING" and not result.get("packingDraft", {}).get("itemList"):
+            _, lines = load_pdf_image_items(path)
+            ocr_text = "\n".join(lines)
+            if ocr_text.strip() and ocr_text != text:
+                text = ocr_text
+                result = parse_packing(text)
         result["rawText"] = text
         return result
 
