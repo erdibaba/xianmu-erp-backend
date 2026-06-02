@@ -1213,6 +1213,10 @@ implements ErpSaleOrderService {
                 ErpSaleOutboundReceiptItemEntity item = new ErpSaleOutboundReceiptItemEntity();
                 item.setLineNo(lineNo++);
                 item.setSaleOrderId(saleOrderId);
+                item.setWmsOrderNo(this.firstNonBlank(itemJson.getString("wmsOrderNo"), receiptJson.getString("wmsOrderNo")));
+                item.setOutboundOrderNo(this.firstNonBlank(itemJson.getString("outboundOrderNo"), receiptJson.getString("outboundOrderNo")));
+                item.setCustomerCode(this.firstNonBlank(itemJson.getString("customerCode"), receiptJson.getString("customerCode")));
+                item.setCustomerName(this.firstNonBlank(itemJson.getString("customerName"), receiptJson.getString("customerName")));
                 item.setRecognizedProductCode(StringUtils.trimToEmpty((String)itemJson.getString("recognizedProductCode")));
                 item.setProductSpec(StringUtils.trimToEmpty((String)itemJson.getString("productSpec")));
                 item.setUnit(StringUtils.trimToEmpty((String)itemJson.getString("unit")));

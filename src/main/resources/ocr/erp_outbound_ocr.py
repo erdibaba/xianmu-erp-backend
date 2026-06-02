@@ -150,7 +150,12 @@ def recognize(paths):
         for key in ("wmsOrderNo", "outboundOrderNo", "customerCode", "customerName"):
             if not header.get(key) and parsed_header.get(key):
                 header[key] = parsed_header.get(key)
-        item_list.extend(parsed_items)
+        for item in parsed_items:
+            item["wmsOrderNo"] = parsed_header.get("wmsOrderNo")
+            item["outboundOrderNo"] = parsed_header.get("outboundOrderNo")
+            item["customerCode"] = parsed_header.get("customerCode")
+            item["customerName"] = parsed_header.get("customerName")
+            item_list.append(item)
 
     return {
         "success": True,
