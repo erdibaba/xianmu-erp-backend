@@ -1,5 +1,6 @@
 package io.renren.modules.erp.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
@@ -32,4 +33,23 @@ public class ErpSaleOutboundReceiptItemEntity implements Serializable {
   private BigDecimal totalWeight;
   private Date createTime;
   private Date updateTime;
+
+  @TableField(exist = false)
+  private String contractNo;
+  @TableField(exist = false)
+  private String expectedFactoryNo;
+  @TableField(exist = false)
+  private String expectedContainerNo;
+  @TableField(exist = false)
+  private Integer expectedBoxes;
+  @TableField(exist = false)
+  private BigDecimal expectedWeight;
+  @TableField(exist = false)
+  private BigDecimal salePriceKg;
+  @TableField(exist = false)
+  private Integer diffBoxes;
+  @TableField(exist = false)
+  private BigDecimal diffWeight;
+  @TableField(exist = false)
+  private BigDecimal adjustmentAmount;
 }

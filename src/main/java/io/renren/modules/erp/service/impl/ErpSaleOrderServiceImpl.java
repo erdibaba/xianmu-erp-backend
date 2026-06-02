@@ -1280,7 +1280,101 @@ implements ErpSaleOrderService {
         }
         List items = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)receipt.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
         receipt.setItemList(items);
+        this.enrichOutboundReceiptAdjustment(receipt);
         return receipt;
+    }
+
+    private void enrichOutboundReceiptAdjustment(ErpSaleOutboundReceiptEntity receipt) {
+        if (receipt == null || receipt.getSaleOrderId() == null || receipt.getItemList() == null) {
+            return;
+        }
+        ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(receipt.getSaleOrderId());
+        QueryWrapper<ErpSaleOrderItemEntity> saleItemWrapper = new QueryWrapper<ErpSaleOrderItemEntity>();
+        saleItemWrapper.eq("sale_order_id", receipt.getSaleOrderId()).orderByAsc("line_no", "id");
+        List<ErpSaleOrderItemEntity> saleItems = this.erpSaleOrderItemDao.selectList((Wrapper)saleItemWrapper);
+        Map<String, List<ErpSaleOrderItemEntity>> byProductContainer = new HashMap<String, List<ErpSaleOrderItemEntity>>();
+        Map<String, List<ErpSaleOrderItemEntity>> byProduct = new HashMap<String, List<ErpSaleOrderItemEntity>>();
+        for (ErpSaleOrderItemEntity saleItem : saleItems) {
+            if (saleItem == null || saleItem.getProductId() == null) {
+                continue;
+            }
+            this.addSaleItemMatch(byProduct, String.valueOf(saleItem.getProductId()), saleItem);
+            String container = this.normalizeContainerNo(saleItem.getSourceContainerNo());
+            if (StringUtils.isNotBlank((String)container)) {
+                this.addSaleItemMatch(byProductContainer, saleItem.getProductId() + "|" + container, saleItem);
+            }
+        }
+        for (ErpSaleOutboundReceiptItemEntity item : receipt.getItemList()) {
+            if (item == null) {
+                continue;
+            }
+            ErpSaleOrderItemEntity saleItem = this.pollMatchedSaleItem(byProductContainer, byProduct, item);
+            this.fillOutboundReceiptAdjustment(item, order, saleItem);
+        }
+    }
+
+    private void addSaleItemMatch(Map<String, List<ErpSaleOrderItemEntity>> map, String key, ErpSaleOrderItemEntity item) {
+        if (StringUtils.isBlank((String)key)) {
+            return;
+        }
+        List<ErpSaleOrderItemEntity> values = map.get(key);
+        if (values == null) {
+            values = new ArrayList<ErpSaleOrderItemEntity>();
+            map.put(key, values);
+        }
+        values.add(item);
+    }
+
+    private ErpSaleOrderItemEntity pollMatchedSaleItem(Map<String, List<ErpSaleOrderItemEntity>> byProductContainer, Map<String, List<ErpSaleOrderItemEntity>> byProduct, ErpSaleOutboundReceiptItemEntity item) {
+        if (item == null || item.getProductId() == null) {
+            return null;
+        }
+        String container = this.normalizeContainerNo(item.getContainerNo());
+        if (StringUtils.isNotBlank((String)container)) {
+            ErpSaleOrderItemEntity matched = this.pollFirst(byProductContainer.get(item.getProductId() + "|" + container));
+            if (matched != null) {
+                return matched;
+            }
+        }
+        return this.pollFirst(byProduct.get(String.valueOf(item.getProductId())));
+    }
+
+    private ErpSaleOrderItemEntity pollFirst(List<ErpSaleOrderItemEntity> items) {
+        if (items == null || items.isEmpty()) {
+            return null;
+        }
+        return items.remove(0);
+    }
+
+    private void fillOutboundReceiptAdjustment(ErpSaleOutboundReceiptItemEntity item, ErpSaleOrderEntity order, ErpSaleOrderItemEntity saleItem) {
+        if (item == null) {
+            return;
+        }
+        item.setContractNo(order == null ? null : this.firstNonBlank(order.getContractNo(), order.getOrderNo()));
+        if (saleItem == null) {
+            item.setExpectedBoxes(0);
+            item.setExpectedWeight(BigDecimal.ZERO);
+            item.setSalePriceKg(BigDecimal.ZERO);
+        } else {
+            item.setExpectedFactoryNo(saleItem.getContractFactoryNo());
+            item.setExpectedContainerNo(saleItem.getSourceContainerNo());
+            item.setExpectedBoxes(this.defaultInt(saleItem.getBoxes()));
+            item.setExpectedWeight(this.defaultDecimal(saleItem.getContractQuantityKg()).setScale(3, RoundingMode.HALF_UP));
+            item.setSalePriceKg(this.defaultDecimal(saleItem.getSalePriceKg()).setScale(2, RoundingMode.HALF_UP));
+            if (StringUtils.isBlank((String)item.getFactoryNo())) {
+                item.setFactoryNo(saleItem.getContractFactoryNo());
+            }
+        }
+        int diffBoxes = this.defaultInt(item.getExpectedBoxes()) - this.defaultInt(item.getShippedQty());
+        BigDecimal diffWeight = this.defaultDecimal(item.getExpectedWeight()).subtract(this.defaultDecimal(item.getTotalWeight())).setScale(3, RoundingMode.HALF_UP);
+        BigDecimal amount = diffWeight.multiply(this.defaultDecimal(item.getSalePriceKg())).setScale(2, RoundingMode.HALF_UP);
+        item.setDiffBoxes(diffBoxes);
+        item.setDiffWeight(diffWeight);
+        item.setAdjustmentAmount(amount);
+    }
+
+    private String normalizeContainerNo(String value) {
+        return StringUtils.trimToEmpty((String)value).replaceAll("\\s+", "").toUpperCase();
     }
 
     private void enrichOutboundReceiptItemProduct(ErpSaleOutboundReceiptItemEntity item, String fallbackName) {
