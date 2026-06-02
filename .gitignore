@@ -28,3 +28,4 @@ tmp-sale-contract*
 dataimport-test.xlsx
 __pycache__/
 *.pyc
+db/backup/
