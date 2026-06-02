@@ -390,6 +390,7 @@ implements ErpSaleOrderService {
         }
         JSONObject recognized = this.runOutboundReceiptOcr(currentFiles);
         ErpSaleOutboundReceiptEntity receipt = this.buildOutboundReceiptFromOcr(saleOrderId, recognized);
+        this.mergeExistingOutboundReceiptItems(receipt);
         return this.upsertOutboundReceipt(receipt, userId);
     }
 
@@ -1268,6 +1269,31 @@ implements ErpSaleOrderService {
             this.erpSaleOutboundReceiptItemDao.insert(item);
         }
         return this.loadOutboundReceipt(receipt.getSaleOrderId());
+    }
+
+    private void mergeExistingOutboundReceiptItems(ErpSaleOutboundReceiptEntity receipt) {
+        if (receipt == null || receipt.getSaleOrderId() == null) {
+            return;
+        }
+        ErpSaleOutboundReceiptEntity existing = this.erpSaleOutboundReceiptDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)receipt.getSaleOrderId())).last("limit 1"));
+        if (existing == null || existing.getId() == null) {
+            return;
+        }
+        List<ErpSaleOutboundReceiptItemEntity> existingItems = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)existing.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
+        if (existingItems == null || existingItems.isEmpty()) {
+            return;
+        }
+        List<ErpSaleOutboundReceiptItemEntity> mergedItems = new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+        mergedItems.addAll(existingItems);
+        if (receipt.getItemList() != null) {
+            mergedItems.addAll(receipt.getItemList());
+        }
+        receipt.setItemList(mergedItems);
+        receipt.setWmsOrderNo(this.firstNonBlank(receipt.getWmsOrderNo(), existing.getWmsOrderNo()));
+        receipt.setOutboundOrderNo(this.firstNonBlank(receipt.getOutboundOrderNo(), existing.getOutboundOrderNo()));
+        receipt.setCustomerCode(this.firstNonBlank(receipt.getCustomerCode(), existing.getCustomerCode()));
+        receipt.setCustomerName(this.firstNonBlank(receipt.getCustomerName(), existing.getCustomerName()));
+        receipt.setRawText(this.firstNonBlank(receipt.getRawText(), existing.getRawText()));
     }
 
     private ErpSaleOutboundReceiptEntity loadOutboundReceipt(Long saleOrderId) {
