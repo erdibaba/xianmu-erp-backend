@@ -1338,9 +1338,20 @@ implements ErpSaleOrderService {
             if (item == null) {
                 continue;
             }
+            this.fillOutboundReceiptItemHeaderFallback(item, receipt);
             ErpSaleOrderItemEntity saleItem = this.pollMatchedSaleItem(byProductContainer, byProduct, item);
             this.fillOutboundReceiptAdjustment(item, order, saleItem);
         }
+    }
+
+    private void fillOutboundReceiptItemHeaderFallback(ErpSaleOutboundReceiptItemEntity item, ErpSaleOutboundReceiptEntity receipt) {
+        if (item == null || receipt == null) {
+            return;
+        }
+        item.setWmsOrderNo(this.firstNonBlank(item.getWmsOrderNo(), receipt.getWmsOrderNo()));
+        item.setOutboundOrderNo(this.firstNonBlank(item.getOutboundOrderNo(), receipt.getOutboundOrderNo()));
+        item.setCustomerCode(this.firstNonBlank(item.getCustomerCode(), receipt.getCustomerCode()));
+        item.setCustomerName(this.firstNonBlank(item.getCustomerName(), receipt.getCustomerName()));
     }
 
     private void addSaleItemMatch(Map<String, List<ErpSaleOrderItemEntity>> map, String key, ErpSaleOrderItemEntity item) {

@@ -30,6 +30,23 @@ def extract_header_value(text, pattern):
     return match.group(1).strip() if match else None
 
 
+def compact_text(text):
+    return re.sub(r"[\s|]+", "", text or "")
+
+
+def extract_header_value_any(text, patterns, compact_patterns=None):
+    for pattern in patterns:
+        value = extract_header_value(text, pattern)
+        if value:
+            return value
+    compacted = compact_text(text)
+    for pattern in compact_patterns or []:
+        match = re.search(pattern, compacted)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
 def normalize_product_code(value):
     match = re.search(r"C\s*(\d{5})", value or "", re.I)
     if match:
@@ -100,10 +117,22 @@ def parse_file(path):
     text = "\n".join(text_rows)
 
     header = {
-        "wmsOrderNo": extract_header_value(text, r"WMS\s*单号[:：]?\s*([A-Z0-9]+)"),
-        "outboundOrderNo": extract_header_value(text, r"订单编号[:：]?\s*([^|\n]+)"),
-        "customerCode": extract_header_value(text, r"客户编码[:：]?\s*([A-Z0-9]+)"),
-        "customerName": extract_header_value(text, r"客户名称[:：]?\s*([^|\n]+)"),
+        "wmsOrderNo": extract_header_value_any(text, [
+            r"WMS\s*单号[:：]?\s*([A-Z0-9]+)",
+            r"W\s*M\s*S\s*单\s*号[:：]?\s*([A-Z0-9]+)"
+        ], [r"WMS单号[:：]?([A-Z0-9]+)"]),
+        "outboundOrderNo": extract_header_value_any(text, [
+            r"订单编号[:：]?\s*([^|\n]+)",
+            r"订单\s*编号[:：]?\s*([^|\n]+)"
+        ], [r"订单编号[:：]?([^|客户联系人电话地址序号]+)"]),
+        "customerCode": extract_header_value_any(text, [
+            r"客户编码[:：]?\s*([A-Z0-9]+)",
+            r"客户\s*编码[:：]?\s*([A-Z0-9]+)"
+        ], [r"客户编码[:：]?([A-Z0-9]+)"]),
+        "customerName": extract_header_value_any(text, [
+            r"客户名称[:：]?\s*([^|\n]+)",
+            r"客户\s*名称[:：]?\s*([^|\n]+)"
+        ], [r"客户名称[:：]?([^下单联系人电话地址]+)"]),
         "rawText": text
     }
 
