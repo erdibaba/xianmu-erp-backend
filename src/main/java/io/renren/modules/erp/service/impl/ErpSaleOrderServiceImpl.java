@@ -1183,9 +1183,18 @@ implements ErpSaleOrderService {
 
     private File ensureOutboundOcrScriptFile() throws Exception {
         File target = new File(System.getProperty("java.io.tmpdir"), "erp_outbound_ocr.py");
-        this.copyClasspathOcrScript("ocr/erp_outbound_ocr.py", target);
-        this.copyClasspathOcrScript("ocr/erp_ocr.py", new File(System.getProperty("java.io.tmpdir"), "erp_ocr.py"));
+        this.copyOcrScript("ocr/erp_outbound_ocr.py", target);
+        this.copyOcrScript("ocr/erp_ocr.py", new File(System.getProperty("java.io.tmpdir"), "erp_ocr.py"));
         return target;
+    }
+
+    private void copyOcrScript(String resourcePath, File target) throws Exception {
+        Path sourcePath = Paths.get("D:\\renren-fast-vue\\renren-fast\\src\\main\\resources", resourcePath);
+        if (Files.exists(sourcePath)) {
+            Files.copy(sourcePath, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        this.copyClasspathOcrScript(resourcePath, target);
     }
 
     private void copyClasspathOcrScript(String resourcePath, File target) throws Exception {
