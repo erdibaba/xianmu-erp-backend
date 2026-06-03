@@ -390,8 +390,7 @@ implements ErpSaleOrderService {
         }
         JSONObject recognized = this.runOutboundReceiptOcr(currentFiles);
         ErpSaleOutboundReceiptEntity receipt = this.buildOutboundReceiptFromOcr(saleOrderId, recognized);
-        this.mergeExistingOutboundReceiptItems(receipt);
-        return this.upsertOutboundReceipt(receipt, userId);
+        return this.appendOutboundReceiptRecognition(receipt, userId);
     }
 
     @Override
@@ -1284,29 +1283,88 @@ implements ErpSaleOrderService {
         return this.loadOutboundReceipt(receipt.getSaleOrderId());
     }
 
-    private void mergeExistingOutboundReceiptItems(ErpSaleOutboundReceiptEntity receipt) {
+    private ErpSaleOutboundReceiptEntity appendOutboundReceiptRecognition(ErpSaleOutboundReceiptEntity receipt, Long userId) {
+        ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(receipt.getSaleOrderId());
+        if (order == null) {
+            throw new RuntimeException("销售单不存在");
+        }
+        if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
+            throw new RuntimeException("出库回单已确认，不能修改");
+        }
+        Date now = new Date();
+        ErpSaleOutboundReceiptEntity existing = this.erpSaleOutboundReceiptDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)receipt.getSaleOrderId())).last("limit 1"));
+        if (existing == null) {
+            receipt.setSaleTotalBoxes(this.calcSaleTotalBoxes(receipt.getSaleOrderId()));
+            receipt.setShippedTotalBoxes(0);
+            receipt.setMatched(0);
+            receipt.setMatchMessage("出库回单待核对");
+            receipt.setCreateTime(now);
+            receipt.setUpdateTime(now);
+            this.erpSaleOutboundReceiptDao.insert(receipt);
+            existing = receipt;
+        } else {
+            existing.setWmsOrderNo(this.firstNonBlank(existing.getWmsOrderNo(), receipt.getWmsOrderNo()));
+            existing.setOutboundOrderNo(this.firstNonBlank(existing.getOutboundOrderNo(), receipt.getOutboundOrderNo()));
+            existing.setCustomerCode(this.firstNonBlank(existing.getCustomerCode(), receipt.getCustomerCode()));
+            existing.setCustomerName(this.firstNonBlank(existing.getCustomerName(), receipt.getCustomerName()));
+            existing.setRawText(this.combineText(existing.getRawText(), receipt.getRawText()));
+            existing.setUpdateTime(now);
+            this.erpSaleOutboundReceiptDao.updateById(existing);
+        }
+        int lineNo = this.nextOutboundReceiptItemLineNo(existing.getId());
+        if (receipt.getItemList() != null) {
+            for (ErpSaleOutboundReceiptItemEntity item : receipt.getItemList()) {
+                if (item == null) continue;
+                item.setId(null);
+                item.setReceiptId(existing.getId());
+                item.setSaleOrderId(receipt.getSaleOrderId());
+                item.setLineNo(lineNo++);
+                item.setCreateTime(now);
+                item.setUpdateTime(now);
+                this.fillOutboundReceiptItemHeaderFallback(item, existing);
+                this.enrichOutboundReceiptItemProduct(item, item.getProductName());
+                this.erpSaleOutboundReceiptItemDao.insert(item);
+            }
+        }
+        this.refreshOutboundReceiptMatch(existing);
+        return this.loadOutboundReceipt(receipt.getSaleOrderId());
+    }
+
+    private void refreshOutboundReceiptMatch(ErpSaleOutboundReceiptEntity receipt) {
         if (receipt == null || receipt.getSaleOrderId() == null) {
             return;
         }
-        ErpSaleOutboundReceiptEntity existing = this.erpSaleOutboundReceiptDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)receipt.getSaleOrderId())).last("limit 1"));
-        if (existing == null || existing.getId() == null) {
-            return;
+        List<ErpSaleOutboundReceiptItemEntity> items = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)receipt.getSaleOrderId()));
+        int saleTotalBoxes = this.calcSaleTotalBoxes(receipt.getSaleOrderId());
+        int shippedTotalBoxes = this.calcOutboundShippedBoxes(items);
+        boolean matched = saleTotalBoxes == shippedTotalBoxes;
+        receipt.setSaleTotalBoxes(saleTotalBoxes);
+        receipt.setShippedTotalBoxes(shippedTotalBoxes);
+        receipt.setMatched(matched ? 1 : 0);
+        receipt.setMatchMessage(matched ? "销售单箱数与出库回单发货数一致" : "销售单箱数" + saleTotalBoxes + "箱，出库回单发货数" + shippedTotalBoxes + "箱，请核对");
+        receipt.setUpdateTime(new Date());
+        this.erpSaleOutboundReceiptDao.updateById(receipt);
+    }
+
+    private int nextOutboundReceiptItemLineNo(Long receiptId) {
+        if (receiptId == null) {
+            return 1;
         }
-        List<ErpSaleOutboundReceiptItemEntity> existingItems = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)existing.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
-        if (existingItems == null || existingItems.isEmpty()) {
-            return;
+        List items = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)((QueryWrapper)((QueryWrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)receiptId)).orderByDesc((Object[])new String[]{"line_no", "id"})).last("limit 1"));
+        if (items == null || items.isEmpty() || ((ErpSaleOutboundReceiptItemEntity)items.get(0)).getLineNo() == null) {
+            return 1;
         }
-        List<ErpSaleOutboundReceiptItemEntity> mergedItems = new ArrayList<ErpSaleOutboundReceiptItemEntity>();
-        mergedItems.addAll(existingItems);
-        if (receipt.getItemList() != null) {
-            mergedItems.addAll(receipt.getItemList());
+        return ((ErpSaleOutboundReceiptItemEntity)items.get(0)).getLineNo() + 1;
+    }
+
+    private String combineText(String existingText, String newText) {
+        if (StringUtils.isBlank((String)existingText)) {
+            return newText;
         }
-        receipt.setItemList(mergedItems);
-        receipt.setWmsOrderNo(this.firstNonBlank(receipt.getWmsOrderNo(), existing.getWmsOrderNo()));
-        receipt.setOutboundOrderNo(this.firstNonBlank(receipt.getOutboundOrderNo(), existing.getOutboundOrderNo()));
-        receipt.setCustomerCode(this.firstNonBlank(receipt.getCustomerCode(), existing.getCustomerCode()));
-        receipt.setCustomerName(this.firstNonBlank(receipt.getCustomerName(), existing.getCustomerName()));
-        receipt.setRawText(this.firstNonBlank(receipt.getRawText(), existing.getRawText()));
+        if (StringUtils.isBlank((String)newText)) {
+            return existingText;
+        }
+        return existingText + "\n\n" + newText;
     }
 
     private ErpSaleOutboundReceiptEntity loadOutboundReceipt(Long saleOrderId) {
