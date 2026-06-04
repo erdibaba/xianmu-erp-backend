@@ -513,17 +513,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   private void enrichConfirmItem(ErpPresaleConfirmItemEntity item, String brandName, Date now) {
     ErpProductEntity product = resolveProduct(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
-    if (product == null) {
-      ErpRecognizedOrderItemVo recognizedItem = new ErpRecognizedOrderItemVo();
-      recognizedItem.setProductCode(item.getProductCode());
-      recognizedItem.setSourceProductCode(item.getSourceProductCode());
-      recognizedItem.setProductName(item.getProductName());
-      recognizedItem.setProductNameEn(item.getProductNameEn());
-      recognizedItem.setUnit(item.getUnit());
-      product = ensureConfirmProduct(recognizedItem, brandName, now);
-    }
     if (product != null) {
-      syncProductNamesFromConfirmItem(product, item);
       item.setProductId(product.getId());
       item.setProductCode(product.getProductCode());
       item.setProductName(firstNonBlank(product.getProductName(), item.getProductName()));
