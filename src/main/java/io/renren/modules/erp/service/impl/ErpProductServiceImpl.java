@@ -43,6 +43,7 @@ public class ErpProductServiceImpl extends ServiceImpl<ErpProductDao, ErpProduct
           .or().like("alias_codes", keyword)
           .or().like("product_name", keyword)
           .or().like("product_name_en", keyword)
+          .or().like("market_circulation_name", keyword)
           .or().like("brand", keyword));
     }
     return wrapper;

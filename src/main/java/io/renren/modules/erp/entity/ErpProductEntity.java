@@ -18,6 +18,7 @@ public class ErpProductEntity implements Serializable {
   private String aliasCodes;
   private String productName;
   private String productNameEn;
+  private String marketCirculationName;
   private String productSpec;
   private String unit;
   private String brand;
