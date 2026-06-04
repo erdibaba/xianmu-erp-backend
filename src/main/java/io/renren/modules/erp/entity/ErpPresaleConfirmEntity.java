@@ -24,6 +24,7 @@ public class ErpPresaleConfirmEntity implements Serializable {
   private String buyerPartnerRole;
   private String contractNo;
   private String containerNo;
+  private String coldFreshType;
   private Date expectedArrivalDate;
   private BigDecimal totalAmount;
   private String currency;

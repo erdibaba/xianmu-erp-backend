@@ -398,6 +398,9 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   private void normalizeConfirm(Long presaleOrderId, ErpPresaleConfirmEntity confirm, Long userId, Date now, boolean create) {
     confirm.setPresaleOrderId(presaleOrderId);
     fillConfirmPartners(confirm);
+    if (StringUtils.isBlank(confirm.getColdFreshType())) {
+      throw new RuntimeException("请选择客户订单确认函冷冻/冷鲜");
+    }
     if (StringUtils.isBlank(confirm.getCurrency())) {
       confirm.setCurrency("CNY");
     }
