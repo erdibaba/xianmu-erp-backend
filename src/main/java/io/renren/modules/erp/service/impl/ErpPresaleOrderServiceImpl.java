@@ -112,8 +112,12 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectOne(
         new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", id).last("limit 1"));
     if (confirm != null) {
-      confirm.setItemList(erpPresaleConfirmItemDao.selectList(
-          new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", confirm.getId()).orderByAsc("line_no", "id")));
+      List<ErpPresaleConfirmItemEntity> confirmItems = erpPresaleConfirmItemDao.selectList(
+          new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", confirm.getId()).orderByAsc("line_no", "id"));
+      for (ErpPresaleConfirmItemEntity confirmItem : confirmItems) {
+        fillConfirmItemMarketCirculationName(confirmItem);
+      }
+      confirm.setItemList(confirmItems);
     }
     ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
         new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", id).last("limit 1"));
@@ -521,6 +525,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       item.setProductCode(product.getProductCode());
       item.setProductName(firstNonBlank(product.getProductName(), item.getProductName()));
       item.setProductNameEn(firstNonBlank(product.getProductNameEn(), item.getProductNameEn()));
+      item.setMarketCirculationName(product.getMarketCirculationName());
     }
     if (item.getTaxRate() == null) {
       item.setTaxRate(new BigDecimal("9.00"));
@@ -531,6 +536,16 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       item.setLineTotalInclTax(scale(nvl(item.getQuantity()).multiply(nvl(item.getUnitPriceInclTax()))));
     } else {
       item.setLineTotalInclTax(scale(nvl(item.getLineTotalInclTax())));
+    }
+  }
+
+  private void fillConfirmItemMarketCirculationName(ErpPresaleConfirmItemEntity item) {
+    ErpProductEntity product = item.getProductId() == null ? null : erpProductDao.selectById(item.getProductId());
+    if (product == null) {
+      product = resolveProduct(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
+    }
+    if (product != null) {
+      item.setMarketCirculationName(product.getMarketCirculationName());
     }
   }
 
