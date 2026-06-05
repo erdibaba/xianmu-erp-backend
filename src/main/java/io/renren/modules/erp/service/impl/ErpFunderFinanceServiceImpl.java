@@ -59,6 +59,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       Pattern.CASE_INSENSITIVE);
   private static final Pattern DATE_PATTERN = Pattern.compile(
       "(20\\d{2})\\s*[年/\\-.]\\s*(\\d{1,2})\\s*[月/\\-.]\\s*(\\d{1,2})\\s*日?");
+  private static final Pattern COMPACT_DATE_PATTERN = Pattern.compile(
+      "(20\\d{2})(\\d{2})(\\d{2})(?:\\s+\\d{1,2}\\s*:\\s*\\d{1,2}(?:\\s*:\\s*\\d{1,2})?)?");
+  private static final Pattern DECIMAL_AMOUNT_PATTERN = Pattern.compile(
+      "(?<!\\d)([0-9]{1,3}(?:,[0-9]{3})+\\.[0-9]{2})(?!\\d)");
 
   @Autowired
   private ErpFunderPaymentDao paymentDao;
@@ -143,6 +147,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     voucher.put("filePath", result == null ? null : result.getSavedFilePath());
     voucher.put("fileName", StringUtils.defaultIfBlank(file.getOriginalFilename(), "银行打款凭证"));
     voucher.put("rawText", rawText);
+    voucher.putAll(extractCcbReceipt(rawText));
     return voucher;
   }
 
@@ -402,9 +407,14 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   private BigDecimal extractAmount(String rawText) {
-    Matcher matcher = LABEL_AMOUNT_PATTERN.matcher(StringUtils.defaultString(rawText));
+    String text = StringUtils.defaultString(rawText);
+    BigDecimal ccbAmount = extractAmountNearLabel(text, "小写金额");
+    if (ccbAmount != null) {
+      return ccbAmount;
+    }
+    Matcher matcher = LABEL_AMOUNT_PATTERN.matcher(text);
     if (!matcher.find()) {
-      matcher = CURRENCY_AMOUNT_PATTERN.matcher(StringUtils.defaultString(rawText));
+      matcher = CURRENCY_AMOUNT_PATTERN.matcher(text);
       if (!matcher.find()) {
         return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
       }
@@ -417,11 +427,20 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   private Date extractDate(String rawText) {
-    Matcher matcher = DATE_PATTERN.matcher(StringUtils.defaultString(rawText));
-    if (!matcher.find()) {
-      return null;
+    String text = StringUtils.defaultString(rawText);
+    Matcher matcher = DATE_PATTERN.matcher(text);
+    if (matcher.find()) {
+      return parseDateParts(matcher.group(1), matcher.group(2), matcher.group(3));
     }
-    String value = matcher.group(1) + "-" + matcher.group(2) + "-" + matcher.group(3);
+    matcher = COMPACT_DATE_PATTERN.matcher(text);
+    if (matcher.find()) {
+      return parseDateParts(matcher.group(1), matcher.group(2), matcher.group(3));
+    }
+    return null;
+  }
+
+  private Date parseDateParts(String year, String month, String day) {
+    String value = year + "-" + month + "-" + day;
     SimpleDateFormat format = new SimpleDateFormat("yyyy-M-d");
     format.setLenient(false);
     try {
@@ -429,6 +448,157 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     } catch (ParseException ignored) {
       return null;
     }
+  }
+
+  private BigDecimal extractAmountNearLabel(String rawText, String label) {
+    int labelIndex = StringUtils.indexOf(rawText, label);
+    if (labelIndex < 0) {
+      return null;
+    }
+    String nearbyText = StringUtils.substring(rawText, labelIndex, Math.min(rawText.length(), labelIndex + 180));
+    Matcher matcher = DECIMAL_AMOUNT_PATTERN.matcher(nearbyText);
+    if (!matcher.find()) {
+      return null;
+    }
+    try {
+      return money(new BigDecimal(matcher.group(1).replace(",", "")));
+    } catch (Exception ignored) {
+      return null;
+    }
+  }
+
+  private Map<String, Object> extractCcbReceipt(String rawText) {
+    Map<String, Object> receipt = new HashMap<String, Object>();
+    String text = StringUtils.defaultString(rawText);
+    if (!StringUtils.contains(text, "中国建设银行网上银行电子回执")) {
+      return receipt;
+    }
+    receipt.put("voucherTemplate", "中国建设银行网上银行电子回执");
+    List<String> lines = nonBlankLines(text);
+    receipt.put("voucherNo", firstMatchingLine(lines, "^\\d{10,}$", 0));
+    receipt.put("transactionNo", firstMatchingLine(lines, "^\\d{2}-[A-Za-z0-9]+$", 0));
+
+    List<String> names = valuesAfterMarker(lines, "全称", 2);
+    if (!names.isEmpty()) {
+      receipt.put("payerName", names.get(0));
+    }
+    if (names.size() > 1) {
+      receipt.put("payeeName", names.get(1));
+    }
+
+    List<String> accounts = numericLinesAfterMarker(lines, "账号", 2);
+    if (!accounts.isEmpty()) {
+      receipt.put("payerAccount", accounts.get(0));
+    }
+    if (accounts.size() > 1) {
+      receipt.put("payeeAccount", accounts.get(1));
+    }
+
+    List<String> banks = valuesAfterMarker(lines, "开户行", 2);
+    if (!banks.isEmpty()) {
+      receipt.put("payerBank", banks.get(0));
+    }
+    if (banks.size() > 1) {
+      receipt.put("payeeBank", banks.get(1));
+    }
+    receipt.put("purpose", firstValueAfterMarker(lines, "用途"));
+    receipt.put("summary", firstValueAfterMarker(lines, "摘要"));
+    return receipt;
+  }
+
+  private List<String> nonBlankLines(String rawText) {
+    List<String> lines = new ArrayList<String>();
+    for (String line : StringUtils.split(StringUtils.defaultString(rawText), '\n')) {
+      String value = StringUtils.trimToEmpty(line);
+      if (StringUtils.isNotBlank(value)) {
+        lines.add(value);
+      }
+    }
+    return lines;
+  }
+
+  private List<String> valuesAfterMarker(List<String> lines, String marker, int maxCount) {
+    List<String> values = new ArrayList<String>();
+    for (int index = 0; index < lines.size() && values.size() < maxCount; index++) {
+      String line = lines.get(index);
+      if (!StringUtils.contains(line, marker)) {
+        continue;
+      }
+      String inlineValue = StringUtils.trimToEmpty(StringUtils.substringAfter(line, marker));
+      if (StringUtils.isNotBlank(inlineValue)) {
+        values.add(inlineValue);
+      }
+      for (int offset = 1; offset <= 6 && index + offset < lines.size() && values.size() < maxCount; offset++) {
+        String candidate = lines.get(index + offset);
+        if (isReceiptMarker(candidate) || candidate.matches("^\\d{6,}$")) {
+          continue;
+        }
+        if (StringUtils.contains(candidate, marker)) {
+          candidate = StringUtils.trimToEmpty(StringUtils.substringAfter(candidate, marker));
+        }
+        if (StringUtils.isNotBlank(candidate)) {
+          values.add(candidate);
+        }
+      }
+    }
+    return values;
+  }
+
+  private List<String> numericLinesAfterMarker(List<String> lines, String marker, int maxCount) {
+    List<String> values = new ArrayList<String>();
+    int firstMarker = lines.indexOf(marker);
+    if (firstMarker < 0) {
+      return values;
+    }
+    for (int index = firstMarker + 1; index < lines.size() && values.size() < maxCount; index++) {
+      String candidate = lines.get(index);
+      if (candidate.matches("^\\d{10,}$")) {
+        values.add(candidate);
+      }
+      if (StringUtils.contains(candidate, "开户行")) {
+        break;
+      }
+    }
+    return values;
+  }
+
+  private String firstValueAfterMarker(List<String> lines, String marker) {
+    for (int index = 0; index < lines.size(); index++) {
+      if (!StringUtils.equals(lines.get(index), marker)) {
+        continue;
+      }
+      for (int offset = 1; offset <= 5 && index + offset < lines.size(); offset++) {
+        String candidate = lines.get(index + offset);
+        if (!isReceiptMarker(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  private String firstMatchingLine(List<String> lines, String regex, int skipCount) {
+    int count = 0;
+    for (String line : lines) {
+      if (!line.matches(regex)) {
+        continue;
+      }
+      if (count++ >= skipCount) {
+        return line;
+      }
+    }
+    return null;
+  }
+
+  private boolean isReceiptMarker(String value) {
+    String[] markers = {"全称", "付款人", "收款人", "账号", "开户行", "小写金额", "大写金额",
+        "用途", "钞汇标志", "摘要", "币别：", "日期：", "凭证号：", "账户明细编号-交易流水号："};
+    for (String marker : markers) {
+      if (StringUtils.equals(value, marker)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private ResponseEntity<byte[]> download(String filePath, String fileName) {
