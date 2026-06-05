@@ -3,6 +3,7 @@ package io.renren.modules.erp.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import lombok.Data;
 
@@ -18,6 +19,7 @@ public class ErpPartnerEntity implements Serializable {
   private Integer partnerType;
   private String businessRole;
   private Integer coldStorageFreeDays;
+  private BigDecimal annualInterestRate;
   private String taxNo;
   private String bankName;
   private String bankAccount;
