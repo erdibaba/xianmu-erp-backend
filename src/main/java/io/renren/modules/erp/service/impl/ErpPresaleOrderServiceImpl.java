@@ -665,6 +665,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   private ErpProductEntity ensureConfirmProduct(ErpRecognizedOrderItemVo item, String brandName, Date now) {
     String sourceCode = StringUtils.trimToEmpty(firstNonBlank(item.getSourceProductCode(), item.getProductCode()));
     String productCode = normalizeMasterProductCode(firstNonBlank(item.getProductCode(), item.getSourceProductCode()));
+    ErpPartnerEntity brandPartner = resolveBrandPartner(brandName);
     if (StringUtils.isBlank(productCode) || productCode.contains("/")) {
       return null;
     }
@@ -679,7 +680,8 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       product.setProductName(StringUtils.trimToEmpty(item.getProductName()));
       product.setProductNameEn(StringUtils.trimToEmpty(item.getProductNameEn()));
       product.setUnit(StringUtils.defaultIfBlank(item.getUnit(), "KG"));
-      product.setBrand(StringUtils.trimToEmpty(brandName));
+      product.setBrandId(brandPartner == null ? null : brandPartner.getId());
+      product.setBrand(brandPartner == null ? StringUtils.trimToEmpty(brandName) : brandPartner.getPartnerName());
       product.setStatus(1);
       product.setCreateTime(now);
       product.setUpdateTime(now);
@@ -706,11 +708,30 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       product.setBrand(brandName);
       needUpdate = true;
     }
+    if (product.getBrandId() == null && brandPartner != null) {
+      product.setBrandId(brandPartner.getId());
+      product.setBrand(brandPartner.getPartnerName());
+      needUpdate = true;
+    }
     if (needUpdate) {
       product.setUpdateTime(now);
       erpProductDao.updateById(product);
     }
     return product;
+  }
+
+  private ErpPartnerEntity resolveBrandPartner(String brandName) {
+    String resolvedName = StringUtils.trimToEmpty(brandName);
+    if (StringUtils.containsIgnoreCase(resolvedName, "Silver Fern Farms")) {
+      resolvedName = "银之蕨食品（上海）有限公司";
+    }
+    if (StringUtils.isBlank(resolvedName)) {
+      return null;
+    }
+    return erpPartnerDao.selectOne(new QueryWrapper<ErpPartnerEntity>()
+        .eq("partner_name", resolvedName)
+        .apply("FIND_IN_SET('BRAND', business_role) > 0")
+        .last("limit 1"));
   }
 
   private String normalizeMasterProductCode(String code) {

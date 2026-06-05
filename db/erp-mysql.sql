@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS `erp_product` (
   `product_name_en` varchar(255) DEFAULT NULL,
   `product_spec` varchar(200) DEFAULT NULL,
   `unit` varchar(32) DEFAULT NULL,
+  `brand_id` bigint(20) DEFAULT NULL COMMENT '品牌方主体ID',
   `brand` varchar(100) DEFAULT NULL,
   `origin_country` varchar(100) DEFAULT NULL,
   `default_tax_rate` decimal(10,2) DEFAULT 0.00,
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS `erp_product` (
   `create_time` datetime DEFAULT NULL,
   `update_time` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_erp_product_code` (`product_code`)
+  KEY `idx_erp_product_code` (`product_code`),
+  KEY `idx_product_brand_id` (`brand_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='产品档案';
 
 CREATE TABLE IF NOT EXISTS `erp_product_price` (

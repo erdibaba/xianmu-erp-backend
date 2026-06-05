@@ -27,6 +27,7 @@ ALTER TABLE `erp_product`
   MODIFY COLUMN `product_name_en` varchar(255) DEFAULT NULL COMMENT '产品英文名称',
   MODIFY COLUMN `product_spec` varchar(200) DEFAULT NULL COMMENT '产品规格',
   MODIFY COLUMN `unit` varchar(32) DEFAULT NULL COMMENT '计量单位',
+  MODIFY COLUMN `brand_id` bigint(20) DEFAULT NULL COMMENT '品牌方主体ID',
   MODIFY COLUMN `brand` varchar(100) DEFAULT NULL COMMENT '品牌方名称',
   MODIFY COLUMN `origin_country` varchar(100) DEFAULT NULL COMMENT '原产国',
   MODIFY COLUMN `default_tax_rate` decimal(10,2) DEFAULT 0.00 COMMENT '默认税率',

@@ -21,6 +21,7 @@ public class ErpProductEntity implements Serializable {
   private String marketCirculationName;
   private String productSpec;
   private String unit;
+  private Long brandId;
   private String brand;
   private String originCountry;
   private BigDecimal defaultTaxRate;
