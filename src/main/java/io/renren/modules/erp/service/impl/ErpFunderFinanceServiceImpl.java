@@ -176,13 +176,17 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   @Override
   @Transactional(rollbackFor = Exception.class)
   public void confirmPayment(ErpFunderPaymentEntity payment, Long userId) {
+    if (payment != null && payment.getId() != null) {
+      updateXianmuPayment(payment);
+      return;
+    }
     validatePayment(payment);
-    if (paymentDao.selectCount(new QueryWrapper<ErpFunderPaymentEntity>()
+    Date now = new Date();
+    Integer paymentType = payment.getPaymentType() == null ? PAYMENT_TYPE_FUNDER : payment.getPaymentType();
+    if (paymentType == PAYMENT_TYPE_FUNDER && paymentDao.selectCount(new QueryWrapper<ErpFunderPaymentEntity>()
         .eq("file_path", payment.getFilePath())) > 0) {
       throw new RuntimeException("该资方打款凭证已经确认，请勿重复提交");
     }
-    Date now = new Date();
-    Integer paymentType = payment.getPaymentType() == null ? PAYMENT_TYPE_FUNDER : payment.getPaymentType();
     ErpPartnerEntity funder = null;
     ErpPartnerEntity payer;
     if (paymentType == PAYMENT_TYPE_FUNDER) {
@@ -207,11 +211,15 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
 
     BigDecimal allocationTotal = BigDecimal.ZERO;
+    boolean xianmuInstallmentsComplete = true;
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
       allocationTotal = allocationTotal.add(money(allocation.getAllocationAmount()));
       if (paymentType == PAYMENT_TYPE_FUNDER) {
         validateXianmuContribution(allocation);
       }
+    }
+    if (paymentType == PAYMENT_TYPE_XIANMU) {
+      xianmuInstallmentsComplete = prepareXianmuInstallments(payment, null);
     }
     if (allocationTotal.compareTo(money(payment.getModifiedAmount())) != 0) {
       throw new RuntimeException("预销售单分摊金额合计必须等于修改金额");
@@ -225,7 +233,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     payment.setFunderName(funder == null ? null : funder.getPartnerName());
     payment.setRecognizedAmount(money(payment.getRecognizedAmount()));
     payment.setModifiedAmount(money(payment.getModifiedAmount()));
-    payment.setStatus(1);
+    payment.setStatus(paymentType == PAYMENT_TYPE_XIANMU && !xianmuInstallmentsComplete ? 0 : 1);
     payment.setCreateUserId(userId);
     payment.setCreateTime(now);
     payment.setUpdateTime(now);
@@ -242,6 +250,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       allocation.setAllocationAmount(money(allocation.getAllocationAmount()));
       allocation.setXianmuContributionRecognizedAmount(money(allocation.getXianmuContributionRecognizedAmount()));
       allocation.setXianmuContributionModifiedAmount(money(allocation.getXianmuContributionModifiedAmount()));
+      allocation.setXianmuDepositRecognizedAmount(money(allocation.getXianmuDepositRecognizedAmount()));
+      allocation.setXianmuDepositModifiedAmount(money(allocation.getXianmuDepositModifiedAmount()));
+      allocation.setXianmuBalanceRecognizedAmount(money(allocation.getXianmuBalanceRecognizedAmount()));
+      allocation.setXianmuBalanceModifiedAmount(money(allocation.getXianmuBalanceModifiedAmount()));
       allocation.setCreateTime(now);
       allocation.setUpdateTime(now);
       allocationDao.insert(allocation);
@@ -435,10 +447,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (payment.getModifiedAmount() == null || payment.getModifiedAmount().compareTo(BigDecimal.ZERO) <= 0) {
       throw new RuntimeException("修改金额必须大于0");
     }
-    if (payment.getPaymentDate() == null) {
+    if (paymentType == PAYMENT_TYPE_FUNDER && payment.getPaymentDate() == null) {
       throw new RuntimeException("请选择资方打款日期");
     }
-    if (StringUtils.isBlank(payment.getFilePath())) {
+    if (paymentType == PAYMENT_TYPE_FUNDER && StringUtils.isBlank(payment.getFilePath())) {
       throw new RuntimeException("请先上传资方打款凭证");
     }
     if (payment.getAllocationList() == null || payment.getAllocationList().isEmpty()) {
@@ -460,6 +472,156 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       }
       presaleIds.add(allocation.getPresaleOrderId());
     }
+  }
+
+  private void updateXianmuPayment(ErpFunderPaymentEntity payment) {
+    ErpFunderPaymentEntity existing = paymentDao.selectOne(new QueryWrapper<ErpFunderPaymentEntity>()
+        .eq("id", payment.getId())
+        .last("for update"));
+    if (existing == null) {
+      throw new RuntimeException("打款记录不存在");
+    }
+    if (existing.getPaymentType() == null || existing.getPaymentType() != PAYMENT_TYPE_XIANMU) {
+      throw new RuntimeException("只有鲜牧全款打款可以补尾款");
+    }
+    if (existing.getStatus() != null && existing.getStatus() == 1) {
+      throw new RuntimeException("该鲜牧全款打款已经确认完成，不能继续修改");
+    }
+    if (payment.getAllocationList() == null || payment.getAllocationList().isEmpty()) {
+      throw new RuntimeException("请保留原合同号分摊明细");
+    }
+    BigDecimal allocationTotal = BigDecimal.ZERO;
+    for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
+      if (allocation.getPresaleOrderId() == null || allocation.getAllocationAmount() == null
+          || allocation.getAllocationAmount().compareTo(BigDecimal.ZERO) <= 0) {
+        throw new RuntimeException("每张预销售单的分摊金额都必须大于0");
+      }
+      Integer existingAllocationCount = allocationDao.selectCount(new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+          .eq("payment_id", existing.getId())
+          .eq("presale_order_id", allocation.getPresaleOrderId()));
+      if (existingAllocationCount == null || existingAllocationCount == 0) {
+        throw new RuntimeException("补尾款时不能变更合同号，请重新打开待尾款记录");
+      }
+      allocationTotal = allocationTotal.add(money(allocation.getAllocationAmount()));
+    }
+    boolean complete = prepareXianmuInstallments(payment, existing.getId());
+    Date now = new Date();
+    existing.setPayerId(payment.getPayerId() == null ? existing.getPayerId() : payment.getPayerId());
+    existing.setPayerName(payment.getPayerName() == null ? existing.getPayerName() : payment.getPayerName());
+    existing.setRecognizedAmount(payment.getRecognizedAmount());
+    existing.setModifiedAmount(allocationTotal);
+    existing.setPaymentDate(payment.getPaymentDate());
+    existing.setFilePath(payment.getFilePath());
+    existing.setFileName(payment.getFileName());
+    existing.setRawText(payment.getRawText());
+    existing.setStatus(complete ? 1 : 0);
+    existing.setUpdateTime(now);
+    paymentDao.updateById(existing);
+
+    allocationDao.delete(new QueryWrapper<ErpFunderPaymentAllocationEntity>().eq("payment_id", existing.getId()));
+    for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
+      ErpPresaleOrderEntity presale = presaleOrderDao.selectById(allocation.getPresaleOrderId());
+      if (presale == null) {
+        throw new RuntimeException("存在已删除或无效的预销售单，请重新选择");
+      }
+      allocation.setPaymentId(existing.getId());
+      allocation.setPresaleOrderNo(presale.getOrderNo());
+      allocation.setSellerContractNo(presale.getSellerContractNo());
+      allocation.setAllocationAmount(money(allocation.getAllocationAmount()));
+      allocation.setXianmuDepositRecognizedAmount(money(allocation.getXianmuDepositRecognizedAmount()));
+      allocation.setXianmuDepositModifiedAmount(money(allocation.getXianmuDepositModifiedAmount()));
+      allocation.setXianmuBalanceRecognizedAmount(money(allocation.getXianmuBalanceRecognizedAmount()));
+      allocation.setXianmuBalanceModifiedAmount(money(allocation.getXianmuBalanceModifiedAmount()));
+      allocation.setCreateTime(now);
+      allocation.setUpdateTime(now);
+      allocationDao.insert(allocation);
+    }
+  }
+
+  private boolean prepareXianmuInstallments(ErpFunderPaymentEntity payment, Long currentPaymentId) {
+    boolean complete = true;
+    BigDecimal recognizedTotal = BigDecimal.ZERO;
+    Date paymentDate = null;
+    String firstFilePath = null;
+    String firstFileName = null;
+    StringBuilder rawText = new StringBuilder();
+    for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
+      BigDecimal allocationAmount = money(allocation.getAllocationAmount());
+      BigDecimal depositAmount = money(allocation.getXianmuDepositModifiedAmount());
+      BigDecimal balanceAmount = money(allocation.getXianmuBalanceModifiedAmount());
+      if (StringUtils.isBlank(allocation.getXianmuDepositFilePath()) || allocation.getXianmuDepositDate() == null
+          || depositAmount.compareTo(BigDecimal.ZERO) <= 0) {
+        throw new RuntimeException("鲜牧全款时，每个合同号都必须先上传定金凭证");
+      }
+      if (depositAmount.compareTo(allocationAmount) > 0) {
+        throw new RuntimeException("鲜牧定金不能大于该合同号的分摊金额");
+      }
+      validateUniqueInstallmentFile("xianmu_deposit_file_path", allocation.getXianmuDepositFilePath(), currentPaymentId,
+          "该鲜牧定金凭证已经使用，请勿重复提交");
+      boolean hasBalance = StringUtils.isNotBlank(allocation.getXianmuBalanceFilePath())
+          || allocation.getXianmuBalanceDate() != null
+          || balanceAmount.compareTo(BigDecimal.ZERO) > 0;
+      if (hasBalance) {
+        if (StringUtils.isBlank(allocation.getXianmuBalanceFilePath()) || allocation.getXianmuBalanceDate() == null
+            || balanceAmount.compareTo(BigDecimal.ZERO) <= 0) {
+          throw new RuntimeException("已填写尾款时，尾款凭证、日期和金额都必须完整");
+        }
+        validateUniqueInstallmentFile("xianmu_balance_file_path", allocation.getXianmuBalanceFilePath(), currentPaymentId,
+            "该鲜牧尾款凭证已经使用，请勿重复提交");
+      }
+      if (!hasBalance || depositAmount.add(balanceAmount).compareTo(allocationAmount) != 0) {
+        complete = false;
+      }
+      if (depositAmount.add(balanceAmount).compareTo(allocationAmount) > 0) {
+        throw new RuntimeException("鲜牧定金加尾款不能大于该合同号的分摊金额");
+      }
+      recognizedTotal = recognizedTotal
+          .add(money(allocation.getXianmuDepositRecognizedAmount()))
+          .add(money(allocation.getXianmuBalanceRecognizedAmount()));
+      if (paymentDate == null || allocation.getXianmuDepositDate().after(paymentDate)) {
+        paymentDate = allocation.getXianmuDepositDate();
+      }
+      if (hasBalance && allocation.getXianmuBalanceDate().after(paymentDate)) {
+        paymentDate = allocation.getXianmuBalanceDate();
+      }
+      if (firstFilePath == null) {
+        firstFilePath = allocation.getXianmuDepositFilePath();
+        firstFileName = allocation.getXianmuDepositFileName();
+      }
+      appendRawText(rawText, allocation.getXianmuDepositRawText());
+      appendRawText(rawText, allocation.getXianmuBalanceRawText());
+    }
+    payment.setRecognizedAmount(money(recognizedTotal));
+    payment.setPaymentDate(paymentDate);
+    payment.setFilePath(firstFilePath);
+    payment.setFileName(StringUtils.defaultIfBlank(firstFileName, "鲜牧全款定金/尾款凭证"));
+    payment.setRawText(rawText.toString());
+    return complete;
+  }
+
+  private void validateUniqueInstallmentFile(String columnName, String filePath, Long currentPaymentId, String message) {
+    if (StringUtils.isBlank(filePath)) {
+      return;
+    }
+    QueryWrapper<ErpFunderPaymentAllocationEntity> wrapper = new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+        .eq(columnName, filePath);
+    if (currentPaymentId != null) {
+      wrapper.ne("payment_id", currentPaymentId);
+    }
+    Integer count = allocationDao.selectCount(wrapper);
+    if (count != null && count > 0) {
+      throw new RuntimeException(message);
+    }
+  }
+
+  private void appendRawText(StringBuilder builder, String value) {
+    if (StringUtils.isBlank(value)) {
+      return;
+    }
+    if (builder.length() > 0) {
+      builder.append("\n\n");
+    }
+    builder.append(value);
   }
 
   private void validateXianmuContribution(ErpFunderPaymentAllocationEntity allocation) {

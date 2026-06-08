@@ -27,6 +27,20 @@ public class ErpFunderPaymentAllocationEntity implements Serializable {
   private String xianmuContributionFilePath;
   private String xianmuContributionFileName;
   private String xianmuContributionRawText;
+  private BigDecimal xianmuDepositRecognizedAmount;
+  private BigDecimal xianmuDepositModifiedAmount;
+  @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+  private Date xianmuDepositDate;
+  private String xianmuDepositFilePath;
+  private String xianmuDepositFileName;
+  private String xianmuDepositRawText;
+  private BigDecimal xianmuBalanceRecognizedAmount;
+  private BigDecimal xianmuBalanceModifiedAmount;
+  @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+  private Date xianmuBalanceDate;
+  private String xianmuBalanceFilePath;
+  private String xianmuBalanceFileName;
+  private String xianmuBalanceRawText;
   private Date createTime;
   private Date updateTime;
 }
