@@ -9,12 +9,14 @@ import io.renren.modules.erp.dao.ErpFunderLoanRepaymentDao;
 import io.renren.modules.erp.dao.ErpFunderPaymentAllocationDao;
 import io.renren.modules.erp.dao.ErpFunderPaymentDao;
 import io.renren.modules.erp.dao.ErpPartnerDao;
+import io.renren.modules.erp.dao.ErpPresaleConfirmDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
 import io.renren.modules.erp.entity.ErpFunderLoanEntity;
 import io.renren.modules.erp.entity.ErpFunderLoanRepaymentEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentAllocationEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
+import io.renren.modules.erp.entity.ErpPresaleConfirmEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.service.ErpFunderFinanceService;
 import io.renren.modules.erp.service.ErpOcrService;
@@ -78,6 +80,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private ErpPartnerDao partnerDao;
   @Autowired
   private ErpPresaleOrderDao presaleOrderDao;
+  @Autowired
+  private ErpPresaleConfirmDao presaleConfirmDao;
   @Autowired
   private ErpOcrService ocrService;
 
@@ -153,7 +157,13 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
           .or().like("seller_contract_no", keyword)
           .or().like("customer_reference", keyword));
     }
-    return presaleOrderDao.selectList(wrapper);
+    List<ErpPresaleOrderEntity> list = presaleOrderDao.selectList(wrapper);
+    for (ErpPresaleOrderEntity presale : list) {
+      presale.setConfirmInfo(presaleConfirmDao.selectOne(new QueryWrapper<ErpPresaleConfirmEntity>()
+          .eq("presale_order_id", presale.getId())
+          .last("limit 1")));
+    }
+    return list;
   }
 
   @Override
@@ -213,6 +223,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     BigDecimal allocationTotal = BigDecimal.ZERO;
     boolean xianmuInstallmentsComplete = true;
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
+      if (paymentType == PAYMENT_TYPE_XIANMU) {
+        allocation.setAllocationAmount(confirmTotalAmount(allocation.getPresaleOrderId()));
+      }
       allocationTotal = allocationTotal.add(money(allocation.getAllocationAmount()));
       if (paymentType == PAYMENT_TYPE_FUNDER) {
         validateXianmuContribution(allocation);
@@ -280,7 +293,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       loan.setLoanDate(payment.getPaymentDate());
       loan.setRepaidPrincipal(money(BigDecimal.ZERO));
       loan.setRemainingPrincipal(loanPrincipal);
-      loan.setInterestAmount(decimal10(BigDecimal.ZERO));
+      loan.setInterestAmount(decimal2(BigDecimal.ZERO));
       loan.setStatus(0);
       loan.setCreateTime(now);
       loan.setUpdateTime(now);
@@ -358,8 +371,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     repayment.setRepaymentPrincipal(principal);
     repayment.setAnnualInterestRate(rate(loan.getAnnualInterestRate()));
     repayment.setLoanDays(days);
-    repayment.setInterestAmount(decimal10(interest));
-    repayment.setExpectedPaymentAmount(decimal10(principal.add(interest)));
+    repayment.setInterestAmount(decimal2(interest));
+    repayment.setExpectedPaymentAmount(decimal2(principal.add(interest)));
     if (repayment.getModifiedAmount() != null) {
       repayment.setAmountMatched(money(repayment.getModifiedAmount())
           .compareTo(money(repayment.getExpectedPaymentAmount())) == 0 ? 1 : 0);
@@ -412,7 +425,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     loan.setRepaidPrincipal(money(repaidPrincipal));
     loan.setRemainingPrincipal(money(remainingPrincipal));
-    loan.setInterestAmount(decimal10(decimal10(loan.getInterestAmount()).add(repayment.getInterestAmount())));
+    loan.setInterestAmount(decimal2(decimal2(loan.getInterestAmount()).add(repayment.getInterestAmount())));
     loan.setStatus(remainingPrincipal.compareTo(BigDecimal.ZERO) == 0 ? 1 : 0);
     loan.setUpdateTime(now);
     loanDao.updateById(loan);
@@ -456,6 +469,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (payment.getAllocationList() == null || payment.getAllocationList().isEmpty()) {
       throw new RuntimeException("请至少选择一张预销售单并填写分摊金额");
     }
+    if (paymentType == PAYMENT_TYPE_XIANMU && payment.getAllocationList().size() != 1) {
+      throw new RuntimeException("鲜牧全款打款只能选择一张预销售单");
+    }
     List<Long> presaleIds = new ArrayList<Long>();
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
       if (allocation.getPresaleOrderId() == null || allocation.getAllocationAmount() == null
@@ -492,6 +508,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     BigDecimal allocationTotal = BigDecimal.ZERO;
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
+      allocation.setAllocationAmount(confirmTotalAmount(allocation.getPresaleOrderId()));
       if (allocation.getPresaleOrderId() == null || allocation.getAllocationAmount() == null
           || allocation.getAllocationAmount().compareTo(BigDecimal.ZERO) <= 0) {
         throw new RuntimeException("每张预销售单的分摊金额都必须大于0");
@@ -622,6 +639,23 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       builder.append("\n\n");
     }
     builder.append(value);
+  }
+
+  private BigDecimal confirmTotalAmount(Long presaleOrderId) {
+    if (presaleOrderId == null) {
+      throw new RuntimeException("请选择预销售单");
+    }
+    ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectOne(new QueryWrapper<ErpPresaleConfirmEntity>()
+        .eq("presale_order_id", presaleOrderId)
+        .last("limit 1"));
+    if (confirm == null) {
+      throw new RuntimeException("所选预销售单尚未上传客户订单确认函，不能进行鲜牧全款打款");
+    }
+    BigDecimal totalAmount = money(confirm.getTotalAmount());
+    if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("所选预销售单的客户订单确认函总金额为空或为0，不能进行鲜牧全款打款");
+    }
+    return totalAmount;
   }
 
   private void validateXianmuContribution(ErpFunderPaymentAllocationEntity allocation) {
@@ -891,7 +925,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     return (value == null ? BigDecimal.ZERO : value).setScale(10, RoundingMode.HALF_UP);
   }
 
-  private BigDecimal decimal10(BigDecimal value) {
-    return (value == null ? BigDecimal.ZERO : value).setScale(10, RoundingMode.HALF_UP);
+  private BigDecimal decimal2(BigDecimal value) {
+    return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
   }
 }
