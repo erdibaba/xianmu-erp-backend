@@ -51,6 +51,8 @@ import org.springframework.web.multipart.MultipartFile;
 public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
   private static final BigDecimal DAYS_PER_YEAR = new BigDecimal("365");
+  private static final int PAYMENT_TYPE_FUNDER = 1;
+  private static final int PAYMENT_TYPE_XIANMU = 2;
   private static final Pattern LABEL_AMOUNT_PATTERN = Pattern.compile(
       "(?:交易金额|付款金额|转账金额|打款金额|金额|人民币)\\s*[:：]?\\s*(?:CNY|RMB|￥|¥)?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)",
       Pattern.CASE_INSENSITIVE);
@@ -83,13 +85,19 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   public PageUtils queryPaymentPage(Map<String, Object> params) {
     String keyword = stringValue(params.get("keyword"));
     String funderId = stringValue(params.get("funderId"));
+    String paymentType = stringValue(params.get("paymentType"));
     QueryWrapper<ErpFunderPaymentEntity> wrapper = new QueryWrapper<ErpFunderPaymentEntity>()
         .orderByDesc("payment_date", "id");
     if (StringUtils.isNotBlank(keyword)) {
-      wrapper.and(q -> q.like("payment_no", keyword).or().like("funder_name", keyword));
+      wrapper.and(q -> q.like("payment_no", keyword)
+          .or().like("payer_name", keyword)
+          .or().like("funder_name", keyword));
     }
     if (StringUtils.isNotBlank(funderId)) {
       wrapper.eq("funder_id", Long.valueOf(funderId));
+    }
+    if (StringUtils.isNotBlank(paymentType)) {
+      wrapper.eq("payment_type", Integer.valueOf(paymentType));
     }
     IPage<ErpFunderPaymentEntity> page = paymentDao.selectPage(
         new Query<ErpFunderPaymentEntity>().getPage(params), wrapper);
@@ -113,6 +121,19 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     QueryWrapper<ErpPartnerEntity> wrapper = new QueryWrapper<ErpPartnerEntity>()
         .eq("status", 1)
         .and(q -> q.like("business_role", "FUNDER"))
+        .orderByAsc("partner_name")
+        .last("limit 15");
+    if (StringUtils.isNotBlank(keyword)) {
+      wrapper.and(q -> q.like("partner_code", keyword).or().like("partner_name", keyword));
+    }
+    return partnerDao.selectList(wrapper);
+  }
+
+  @Override
+  public List<ErpPartnerEntity> queryInternalPayerOptions(String keyword) {
+    QueryWrapper<ErpPartnerEntity> wrapper = new QueryWrapper<ErpPartnerEntity>()
+        .eq("status", 1)
+        .and(q -> q.like("business_role", "INTERNAL"))
         .orderByAsc("partner_name")
         .last("limit 15");
     if (StringUtils.isNotBlank(keyword)) {
@@ -160,25 +181,47 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       throw new RuntimeException("该资方打款凭证已经确认，请勿重复提交");
     }
     Date now = new Date();
-    ErpPartnerEntity funder = partnerDao.selectById(payment.getFunderId());
-    if (funder == null || funder.getStatus() == null || funder.getStatus() != 1
-        || !StringUtils.contains(StringUtils.defaultString(funder.getBusinessRole()), "FUNDER")) {
+    Integer paymentType = payment.getPaymentType() == null ? PAYMENT_TYPE_FUNDER : payment.getPaymentType();
+    ErpPartnerEntity funder = null;
+    ErpPartnerEntity payer;
+    if (paymentType == PAYMENT_TYPE_FUNDER) {
+      funder = partnerDao.selectById(payment.getFunderId());
+      payer = funder;
+    } else if (paymentType == PAYMENT_TYPE_XIANMU) {
+      payer = partnerDao.selectById(payment.getPayerId());
+    } else {
+      throw new RuntimeException("请选择正确的付款类型");
+    }
+    if (paymentType == PAYMENT_TYPE_XIANMU && (payer == null || payer.getStatus() == null || payer.getStatus() != 1
+        || !StringUtils.contains(StringUtils.defaultString(payer.getBusinessRole()), "INTERNAL"))) {
+      throw new RuntimeException("请选择启用状态的鲜牧付款主体");
+    }
+    if (paymentType == PAYMENT_TYPE_FUNDER && (funder == null || funder.getStatus() == null || funder.getStatus() != 1
+        || !StringUtils.contains(StringUtils.defaultString(funder.getBusinessRole()), "FUNDER"))) {
       throw new RuntimeException("请选择启用状态的资方");
     }
-    if (funder.getAnnualInterestRate() == null || funder.getAnnualInterestRate().compareTo(BigDecimal.ZERO) <= 0) {
+    if (paymentType == PAYMENT_TYPE_FUNDER
+        && (funder.getAnnualInterestRate() == null || funder.getAnnualInterestRate().compareTo(BigDecimal.ZERO) <= 0)) {
       throw new RuntimeException("所选资方未维护年利率，请先到往来单位维护资方年利率");
     }
 
     BigDecimal allocationTotal = BigDecimal.ZERO;
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
       allocationTotal = allocationTotal.add(money(allocation.getAllocationAmount()));
+      if (paymentType == PAYMENT_TYPE_FUNDER) {
+        validateXianmuContribution(allocation);
+      }
     }
     if (allocationTotal.compareTo(money(payment.getModifiedAmount())) != 0) {
       throw new RuntimeException("预销售单分摊金额合计必须等于修改金额");
     }
 
-    payment.setPaymentNo(number("FP"));
-    payment.setFunderName(funder.getPartnerName());
+    payment.setPaymentNo(number("PP"));
+    payment.setPaymentType(paymentType);
+    payment.setPayerId(payer.getId());
+    payment.setPayerName(payer.getPartnerName());
+    payment.setFunderId(funder == null ? null : funder.getId());
+    payment.setFunderName(funder == null ? null : funder.getPartnerName());
     payment.setRecognizedAmount(money(payment.getRecognizedAmount()));
     payment.setModifiedAmount(money(payment.getModifiedAmount()));
     payment.setStatus(1);
@@ -196,10 +239,20 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       allocation.setPresaleOrderNo(presale.getOrderNo());
       allocation.setSellerContractNo(presale.getSellerContractNo());
       allocation.setAllocationAmount(money(allocation.getAllocationAmount()));
+      allocation.setXianmuContributionRecognizedAmount(money(allocation.getXianmuContributionRecognizedAmount()));
+      allocation.setXianmuContributionModifiedAmount(money(allocation.getXianmuContributionModifiedAmount()));
       allocation.setCreateTime(now);
       allocation.setUpdateTime(now);
       allocationDao.insert(allocation);
 
+      if (paymentType != PAYMENT_TYPE_FUNDER) {
+        continue;
+      }
+      BigDecimal loanPrincipal = allocation.getAllocationAmount()
+          .subtract(money(allocation.getXianmuContributionModifiedAmount()));
+      if (loanPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
+        continue;
+      }
       ErpFunderLoanEntity loan = new ErpFunderLoanEntity();
       loan.setLoanNo(number("FL"));
       loan.setPaymentId(payment.getId());
@@ -209,11 +262,11 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       loan.setSellerContractNo(presale.getSellerContractNo());
       loan.setFunderId(funder.getId());
       loan.setFunderName(funder.getPartnerName());
-      loan.setLoanAmount(allocation.getAllocationAmount());
+      loan.setLoanAmount(loanPrincipal);
       loan.setAnnualInterestRate(rate(funder.getAnnualInterestRate()));
       loan.setLoanDate(payment.getPaymentDate());
       loan.setRepaidPrincipal(money(BigDecimal.ZERO));
-      loan.setRemainingPrincipal(allocation.getAllocationAmount());
+      loan.setRemainingPrincipal(loanPrincipal);
       loan.setInterestAmount(decimal10(BigDecimal.ZERO));
       loan.setStatus(0);
       loan.setCreateTime(now);
@@ -365,8 +418,18 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   private void validatePayment(ErpFunderPaymentEntity payment) {
-    if (payment == null || payment.getFunderId() == null) {
+    if (payment == null) {
+      throw new RuntimeException("请填写打款信息");
+    }
+    Integer paymentType = payment.getPaymentType() == null ? PAYMENT_TYPE_FUNDER : payment.getPaymentType();
+    if (paymentType == PAYMENT_TYPE_FUNDER && payment.getFunderId() == null) {
       throw new RuntimeException("请选择资方");
+    }
+    if (paymentType == PAYMENT_TYPE_XIANMU && payment.getPayerId() == null) {
+      throw new RuntimeException("请选择鲜牧付款主体");
+    }
+    if (paymentType != PAYMENT_TYPE_FUNDER && paymentType != PAYMENT_TYPE_XIANMU) {
+      throw new RuntimeException("请选择正确的付款类型");
     }
     if (payment.getModifiedAmount() == null || payment.getModifiedAmount().compareTo(BigDecimal.ZERO) <= 0) {
       throw new RuntimeException("修改金额必须大于0");
@@ -390,6 +453,27 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         throw new RuntimeException("同一张预销售单不能重复分摊");
       }
       presaleIds.add(allocation.getPresaleOrderId());
+    }
+  }
+
+  private void validateXianmuContribution(ErpFunderPaymentAllocationEntity allocation) {
+    if (StringUtils.isBlank(allocation.getXianmuContributionFilePath())) {
+      throw new RuntimeException("资方全款时，每个合同号都必须上传鲜牧出资款凭证");
+    }
+    if (allocation.getXianmuContributionDate() == null) {
+      throw new RuntimeException("请选择鲜牧出资款打款日期");
+    }
+    BigDecimal contributionAmount = money(allocation.getXianmuContributionModifiedAmount());
+    if (contributionAmount.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("鲜牧出资款金额必须大于0");
+    }
+    if (contributionAmount.compareTo(money(allocation.getAllocationAmount())) > 0) {
+      throw new RuntimeException("鲜牧出资款不能大于该合同号的资方全款金额");
+    }
+    Integer count = allocationDao.selectCount(new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+        .eq("xianmu_contribution_file_path", allocation.getXianmuContributionFilePath()));
+    if (count != null && count > 0) {
+      throw new RuntimeException("该鲜牧出资款凭证已经使用，请勿重复提交");
     }
   }
 

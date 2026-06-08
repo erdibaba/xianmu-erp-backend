@@ -42,6 +42,11 @@ public class ErpFunderFinanceController extends AbstractController {
     return R.ok().put("list", funderFinanceService.queryFunderOptions(keyword));
   }
 
+  @GetMapping("/internal-payer-options")
+  public R internalPayerOptions(@RequestParam(value = "keyword", required = false) String keyword) {
+    return R.ok().put("list", funderFinanceService.queryInternalPayerOptions(keyword));
+  }
+
   @GetMapping("/presale-options")
   public R presaleOptions(@RequestParam(value = "keyword", required = false) String keyword) {
     return R.ok().put("list", funderFinanceService.queryPresaleOptions(keyword));

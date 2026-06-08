@@ -18,6 +18,8 @@ public interface ErpFunderFinanceService {
 
   List<ErpPartnerEntity> queryFunderOptions(String keyword);
 
+  List<ErpPartnerEntity> queryInternalPayerOptions(String keyword);
+
   List<ErpPresaleOrderEntity> queryPresaleOptions(String keyword);
 
   Map<String, Object> recognizeVoucher(MultipartFile file) throws Exception;

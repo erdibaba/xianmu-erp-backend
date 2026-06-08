@@ -18,6 +18,9 @@ public class ErpFunderPaymentEntity implements Serializable {
   @TableId
   private Long id;
   private String paymentNo;
+  private Integer paymentType;
+  private Long payerId;
+  private String payerName;
   private Long funderId;
   private String funderName;
   private BigDecimal recognizedAmount;
