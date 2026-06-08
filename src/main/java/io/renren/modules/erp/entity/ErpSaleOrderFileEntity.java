@@ -14,6 +14,7 @@ public class ErpSaleOrderFileEntity implements Serializable {
   @TableId
   private Long id;
   private Long saleOrderId;
+  private Long batchId;
   private String fileType;
   private Integer lineNo;
   private String filePath;

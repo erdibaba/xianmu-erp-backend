@@ -145,6 +145,7 @@ public class ErpSaleOrderController extends AbstractController {
   @PostMapping("/outbound/receipt/recognize")
   @RequiresPermissions("erp:tradeorder:update")
   public R recognizeOutboundReceipt(@RequestParam("saleOrderId") Long saleOrderId,
+                                    @RequestParam(value = "batchId", required = false) Long batchId,
                                     @RequestParam("files") MultipartFile[] files) throws Exception {
     if (saleOrderId == null || saleOrderId <= 0) {
       return R.error("请先保存销售单");
@@ -153,7 +154,7 @@ public class ErpSaleOrderController extends AbstractController {
       return R.error("请先选择出库回单文件");
     }
     try {
-      return R.ok().put("receipt", erpSaleOrderService.recognizeOutboundReceipt(saleOrderId, files, getUserId()));
+      return R.ok().put("receipt", erpSaleOrderService.recognizeOutboundReceipt(saleOrderId, batchId, files, getUserId()));
     } catch (RuntimeException e) {
       return R.error(e.getMessage());
     }
@@ -164,6 +165,76 @@ public class ErpSaleOrderController extends AbstractController {
   public R saveOutboundReceipt(@RequestBody ErpSaleOutboundReceiptEntity receipt) {
     try {
       return R.ok().put("receipt", erpSaleOrderService.saveOutboundReceipt(receipt, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @GetMapping("/outbound/batch/list")
+  @RequiresPermissions("erp:tradeorder:info")
+  public R outboundBatchList(@RequestParam("saleOrderId") Long saleOrderId) {
+    return R.ok().put("list", erpSaleOrderService.queryOutboundBatches(saleOrderId));
+  }
+
+  @PostMapping("/outbound/batch/create")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R createOutboundBatch(@RequestBody Map<String, Object> params) {
+    Long saleOrderId = params.get("saleOrderId") == null ? null : Long.valueOf(String.valueOf(params.get("saleOrderId")));
+    if (saleOrderId == null || saleOrderId <= 0) {
+      return R.error("请先选择销售单");
+    }
+    try {
+      return R.ok().put("batch", erpSaleOrderService.createOutboundBatch(saleOrderId, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @PostMapping("/outbound/batch/bank-slip/upload")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R uploadOutboundBatchBankSlip(@RequestParam("saleOrderId") Long saleOrderId,
+                                       @RequestParam("batchId") Long batchId,
+                                       @RequestParam("files") MultipartFile[] files) throws Exception {
+    if (saleOrderId == null || saleOrderId <= 0) {
+      return R.error("请先选择销售单");
+    }
+    if (batchId == null || batchId <= 0) {
+      return R.error("请先选择出库批次");
+    }
+    if (files == null || files.length == 0) {
+      return R.error("请先选择二批来款水单");
+    }
+    try {
+      return R.ok().put("batch", erpSaleOrderService.uploadOutboundBatchBankSlip(saleOrderId, batchId, files, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @PostMapping("/outbound/batch/confirm")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R confirmOutboundBatch(@RequestBody Map<String, Object> params) {
+    Long batchId = params.get("batchId") == null ? null : Long.valueOf(String.valueOf(params.get("batchId")));
+    if (batchId == null || batchId <= 0) {
+      return R.error("请先选择出库批次");
+    }
+    try {
+      return R.ok().put("batch", erpSaleOrderService.confirmOutboundBatch(batchId, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @PostMapping("/outbound/batch/void")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R voidOutboundBatch(@RequestBody Map<String, Object> params) {
+    Long batchId = params.get("batchId") == null ? null : Long.valueOf(String.valueOf(params.get("batchId")));
+    if (batchId == null || batchId <= 0) {
+      return R.error("请先选择出库批次");
+    }
+    try {
+      erpSaleOrderService.voidOutboundBatch(batchId, getUserId());
+      return R.ok();
     } catch (RuntimeException e) {
       return R.error(e.getMessage());
     }

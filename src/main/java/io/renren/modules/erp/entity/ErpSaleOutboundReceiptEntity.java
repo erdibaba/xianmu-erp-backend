@@ -17,6 +17,7 @@ public class ErpSaleOutboundReceiptEntity implements Serializable {
   @TableId
   private Long id;
   private Long saleOrderId;
+  private Long batchId;
   private String wmsOrderNo;
   private String outboundOrderNo;
   private String customerCode;

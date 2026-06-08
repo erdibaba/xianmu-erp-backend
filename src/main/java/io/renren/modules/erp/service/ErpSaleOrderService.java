@@ -4,6 +4,7 @@ import io.renren.common.utils.PageUtils;
 import io.renren.modules.erp.entity.ErpSaleOrderFileEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
@@ -39,7 +40,19 @@ public interface ErpSaleOrderService {
 
   ErpSaleOutboundReceiptEntity recognizeOutboundReceipt(Long saleOrderId, MultipartFile[] files, Long userId) throws Exception;
 
+  ErpSaleOutboundReceiptEntity recognizeOutboundReceipt(Long saleOrderId, Long batchId, MultipartFile[] files, Long userId) throws Exception;
+
   ErpSaleOutboundReceiptEntity saveOutboundReceipt(ErpSaleOutboundReceiptEntity receipt, Long userId);
+
+  List<ErpSaleOutboundBatchEntity> queryOutboundBatches(Long saleOrderId);
+
+  ErpSaleOutboundBatchEntity createOutboundBatch(Long saleOrderId, Long userId);
+
+  ErpSaleOutboundBatchEntity uploadOutboundBatchBankSlip(Long saleOrderId, Long batchId, MultipartFile[] files, Long userId) throws Exception;
+
+  ErpSaleOutboundBatchEntity confirmOutboundBatch(Long batchId, Long userId);
+
+  void voidOutboundBatch(Long batchId, Long userId);
 
   ResponseEntity<byte[]> downloadFile(Long fileId);
 
