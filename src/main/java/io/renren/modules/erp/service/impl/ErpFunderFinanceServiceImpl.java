@@ -145,6 +145,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   @Override
   public List<ErpPresaleOrderEntity> queryPresaleOptions(String keyword) {
     QueryWrapper<ErpPresaleOrderEntity> wrapper = new QueryWrapper<ErpPresaleOrderEntity>()
+        .notInSql("id", "select presale_order_id from erp_funder_payment_allocation")
         .orderByDesc("order_date", "id")
         .last("limit 15");
     if (StringUtils.isNotBlank(keyword)) {
@@ -451,6 +452,11 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       }
       if (presaleIds.contains(allocation.getPresaleOrderId())) {
         throw new RuntimeException("同一张预销售单不能重复分摊");
+      }
+      Integer existingCount = allocationDao.selectCount(new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+          .eq("presale_order_id", allocation.getPresaleOrderId()));
+      if (existingCount != null && existingCount > 0) {
+        throw new RuntimeException("该合同已经进行过资方全款或鲜牧全款打款，不能重复选择");
       }
       presaleIds.add(allocation.getPresaleOrderId());
     }
