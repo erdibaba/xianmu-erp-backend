@@ -570,9 +570,6 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
           || depositAmount.compareTo(BigDecimal.ZERO) <= 0) {
         throw new RuntimeException("鲜牧全款时，每个合同号都必须先上传定金凭证");
       }
-      if (depositAmount.compareTo(allocationAmount) > 0) {
-        throw new RuntimeException("鲜牧定金不能大于该合同号的分摊金额");
-      }
       validateUniqueInstallmentFile("xianmu_deposit_file_path", allocation.getXianmuDepositFilePath(), currentPaymentId,
           "该鲜牧定金凭证已经使用，请勿重复提交");
       boolean hasBalance = StringUtils.isNotBlank(allocation.getXianmuBalanceFilePath())
@@ -585,12 +582,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         }
         validateUniqueInstallmentFile("xianmu_balance_file_path", allocation.getXianmuBalanceFilePath(), currentPaymentId,
             "该鲜牧尾款凭证已经使用，请勿重复提交");
+        if (balanceAmount.compareTo(allocationAmount) != 0) {
+          throw new RuntimeException("鲜牧尾款金额必须等于客户订单确认函总金额");
+        }
       }
-      if (!hasBalance || depositAmount.add(balanceAmount).compareTo(allocationAmount) != 0) {
+      if (!hasBalance) {
         complete = false;
-      }
-      if (depositAmount.add(balanceAmount).compareTo(allocationAmount) > 0) {
-        throw new RuntimeException("鲜牧定金加尾款不能大于该合同号的分摊金额");
       }
       recognizedTotal = recognizedTotal
           .add(money(allocation.getXianmuDepositRecognizedAmount()))
