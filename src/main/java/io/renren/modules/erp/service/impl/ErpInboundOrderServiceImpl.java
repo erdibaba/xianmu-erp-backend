@@ -453,6 +453,11 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     }
   }
 
+  @Override
+  public Map<String, Integer> getPackingBoxMap(Long presaleOrderId) {
+    return loadPackingBoxMap(presaleOrderId);
+  }
+
   private Map<String, Integer> loadPackingBoxMap(Long presaleOrderId) {
     Map<String, Integer> result = new HashMap<String, Integer>();
     ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(

@@ -12,6 +12,8 @@ public interface ErpInboundOrderService {
 
   ErpInboundOrderEntity getDetail(Long presaleOrderId);
 
+  Map<String, Integer> getPackingBoxMap(Long presaleOrderId);
+
   void saveOrder(ErpInboundOrderEntity order, Long userId);
 
   void updateOrder(ErpInboundOrderEntity order, Long userId);

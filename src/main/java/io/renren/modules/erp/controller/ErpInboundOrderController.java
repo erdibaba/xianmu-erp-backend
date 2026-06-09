@@ -34,6 +34,12 @@ public class ErpInboundOrderController extends AbstractController {
     return R.ok().put("inboundOrder", erpInboundOrderService.getDetail(presaleOrderId));
   }
 
+  @GetMapping("/packing-boxes/{presaleOrderId}")
+  @RequiresPermissions("erp:tradeorder:info")
+  public R packingBoxes(@PathVariable("presaleOrderId") Long presaleOrderId) {
+    return R.ok().put("packingBoxMap", erpInboundOrderService.getPackingBoxMap(presaleOrderId));
+  }
+
   @PostMapping("/save")
   @RequiresPermissions("erp:tradeorder:save")
   public R save(@RequestBody ErpInboundOrderEntity order) {
