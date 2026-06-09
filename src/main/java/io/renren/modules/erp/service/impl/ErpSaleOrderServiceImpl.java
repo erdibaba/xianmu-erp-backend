@@ -526,9 +526,6 @@ implements ErpSaleOrderService {
         if (batch == null) {
             throw new RuntimeException("出库批次不存在");
         }
-        if (this.defaultInt(batch.getStatus()) == OUTBOUND_BATCH_CONFIRMED) {
-            throw new RuntimeException("出库批次已确认，不能删除");
-        }
         this.deleteOutboundBatchData(batch);
         this.refreshOutboundReceiptOrderConfirmed(batch.getSaleOrderId());
         this.refreshOrderStatus(batch.getSaleOrderId());
