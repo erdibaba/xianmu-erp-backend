@@ -56,6 +56,16 @@ public class RRExceptionHandler {
 		return R.error("没有权限，请联系管理员授权");
 	}
 
+	@ExceptionHandler(RuntimeException.class)
+	public R handleRuntimeException(RuntimeException e){
+		logger.error(e.getMessage(), e);
+		String message = e.getMessage();
+		if(message == null || message.trim().length() == 0){
+			return R.error();
+		}
+		return R.error(message);
+	}
+
 	@ExceptionHandler(Exception.class)
 	public R handleException(Exception e){
 		logger.error(e.getMessage(), e);
