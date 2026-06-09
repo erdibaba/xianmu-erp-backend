@@ -456,6 +456,10 @@ implements ErpSaleOrderService {
         if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
             throw new RuntimeException("销售单出库流程已完成，不能新增出库批次");
         }
+        ErpSaleOutboundBatchEntity openBatch = this.findOpenOutboundBatch(saleOrderId);
+        if (openBatch != null) {
+            throw new RuntimeException("存在未完成的出库批次，请先确认完成或作废后再新增");
+        }
         Date now = new Date();
         ErpSaleOutboundBatchEntity batch = new ErpSaleOutboundBatchEntity();
         batch.setSaleOrderId(saleOrderId);
@@ -1536,16 +1540,20 @@ implements ErpSaleOrderService {
     }
 
     private ErpSaleOutboundBatchEntity ensureOpenOutboundBatch(Long saleOrderId, Long userId) {
+        ErpSaleOutboundBatchEntity openBatch = this.findOpenOutboundBatch(saleOrderId);
+        if (openBatch != null) {
+            return openBatch;
+        }
+        return this.createOutboundBatch(saleOrderId, userId);
+    }
+
+    private ErpSaleOutboundBatchEntity findOpenOutboundBatch(Long saleOrderId) {
         QueryWrapper<ErpSaleOutboundBatchEntity> wrapper = new QueryWrapper<ErpSaleOutboundBatchEntity>();
         wrapper.eq("sale_order_id", saleOrderId);
         wrapper.ne("status", OUTBOUND_BATCH_CONFIRMED);
         wrapper.ne("status", OUTBOUND_BATCH_VOID);
         wrapper.orderByDesc("id");
-        List<ErpSaleOutboundBatchEntity> batches = this.erpSaleOutboundBatchDao.selectList((Wrapper)wrapper);
-        if (batches != null && !batches.isEmpty()) {
-            return batches.get(0);
-        }
-        return this.createOutboundBatch(saleOrderId, userId);
+        return this.erpSaleOutboundBatchDao.selectOne((Wrapper)wrapper.last("limit 1"));
     }
 
     private ErpSaleOutboundBatchEntity requireEditableOutboundBatch(Long saleOrderId, Long batchId) {
