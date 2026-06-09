@@ -173,13 +173,14 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     ErpRecognizeResultVo result = ocrService.recognize(file, "bank_payment_voucher");
     String rawText = result == null ? "" : StringUtils.defaultString(result.getRawText());
+    Map<String, Object> receipt = extractBankReceipt(rawText);
     Map<String, Object> voucher = new HashMap<String, Object>();
-    voucher.put("recognizedAmount", extractAmount(rawText));
-    voucher.put("paymentDate", extractDate(rawText));
+    voucher.put("recognizedAmount", receipt.get("recognizedAmount") == null ? extractAmount(rawText) : receipt.get("recognizedAmount"));
+    voucher.put("paymentDate", receipt.get("paymentDate") == null ? extractDate(rawText) : receipt.get("paymentDate"));
     voucher.put("filePath", result == null ? null : result.getSavedFilePath());
     voucher.put("fileName", StringUtils.defaultIfBlank(file.getOriginalFilename(), "银行打款凭证"));
     voucher.put("rawText", rawText);
-    voucher.putAll(extractCcbReceipt(rawText));
+    voucher.putAll(receipt);
     return voucher;
   }
 
@@ -695,6 +696,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (ccbAmount != null) {
       return ccbAmount;
     }
+    BigDecimal bracketAmount = extractAmountNearLabel(text, "小写");
+    if (bracketAmount != null) {
+      return bracketAmount;
+    }
     Matcher matcher = LABEL_AMOUNT_PATTERN.matcher(text);
     if (!matcher.find()) {
       matcher = CURRENCY_AMOUNT_PATTERN.matcher(text);
@@ -750,6 +755,23 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
   }
 
+  private Map<String, Object> extractBankReceipt(String rawText) {
+    String text = StringUtils.defaultString(rawText);
+    if (StringUtils.contains(text, "建设银行")) {
+      return extractCcbReceipt(text);
+    }
+    if (StringUtils.contains(text, "浦发银行") || StringUtils.containsIgnoreCase(text, "SPDBANK")) {
+      return extractSpdReceipt(text);
+    }
+    if (StringUtils.contains(text, "工商银行") || StringUtils.containsIgnoreCase(text, "ICBC")) {
+      return extractIcbcReceipt(text);
+    }
+    if (StringUtils.contains(text, "兴业银行")) {
+      return extractCibReceipt(text);
+    }
+    return new HashMap<String, Object>();
+  }
+
   private Map<String, Object> extractCcbReceipt(String rawText) {
     Map<String, Object> receipt = new HashMap<String, Object>();
     String text = StringUtils.defaultString(rawText);
@@ -789,6 +811,70 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     return receipt;
   }
 
+  private Map<String, Object> extractSpdReceipt(String rawText) {
+    Map<String, Object> receipt = new HashMap<String, Object>();
+    String text = StringUtils.defaultString(rawText);
+    receipt.put("voucherTemplate", StringUtils.contains(text, "业务凭证/回单")
+        ? "上海浦东发展银行业务凭证/回单" : "上海浦东发展银行网上银行电子回单");
+    List<String> lines = nonBlankLines(text);
+    receipt.put("voucherNo", firstValueAfterAnyMarker(lines, "电子回单编号", "回单编号"));
+    receipt.put("transactionNo", firstValueAfterAnyMarker(lines, "交易流水号-传票序号", "交易流水号"));
+    putIfNotBlank(receipt, "payerName", firstValueAfterAnyMarker(lines, "付款人户名"));
+    putIfNotBlank(receipt, "payeeName", firstValueAfterAnyMarker(lines, "收款人户名"));
+    putIfNotBlank(receipt, "payerAccount", firstValueAfterAnyMarker(lines, "付款账号"));
+    putIfNotBlank(receipt, "payeeAccount", firstValueAfterAnyMarker(lines, "收款账号"));
+    putIfNotBlank(receipt, "payerBank", firstValueAfterAnyMarker(lines, "付款人开户行"));
+    putIfNotBlank(receipt, "payeeBank", firstValueAfterAnyMarker(lines, "收款人开户行"));
+    if (receipt.get("payerName") == null || receipt.get("payeeName") == null) {
+      putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "账户名称"), "payerName", "payeeName");
+    }
+    if (receipt.get("payerAccount") == null || receipt.get("payeeAccount") == null) {
+      putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, false, "账号"), "payerAccount", "payeeAccount");
+    }
+    if (receipt.get("payerBank") == null || receipt.get("payeeBank") == null) {
+      putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "开户银行"), "payerBank", "payeeBank");
+    }
+    receipt.put("purpose", firstValueAfterAnyMarker(lines, "用途", "交易附言"));
+    receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要"));
+    receipt.put("recognizedAmount", extractAmount(text));
+    receipt.put("paymentDate", extractDate(text));
+    return receipt;
+  }
+
+  private Map<String, Object> extractIcbcReceipt(String rawText) {
+    Map<String, Object> receipt = new HashMap<String, Object>();
+    String text = StringUtils.defaultString(rawText);
+    receipt.put("voucherTemplate", "中国工商银行网上银行电子回单");
+    List<String> lines = nonBlankLines(text);
+    receipt.put("voucherNo", firstValueAfterAnyMarker(lines, "电子回单号码", "电子回单编号"));
+    receipt.put("transactionNo", firstValueAfterAnyMarker(lines, "交易流水号"));
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "户名", "⼾ 名"), "payerName", "payeeName");
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, false, "账号", "账 号"), "payerAccount", "payeeAccount");
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "开户银行", "开⼾银⾏"), "payerBank", "payeeBank");
+    receipt.put("purpose", firstValueAfterAnyMarker(lines, "用途", "⽤ 途"));
+    receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要", "摘 要"));
+    receipt.put("recognizedAmount", extractAmount(text));
+    receipt.put("paymentDate", extractDate(text));
+    return receipt;
+  }
+
+  private Map<String, Object> extractCibReceipt(String rawText) {
+    Map<String, Object> receipt = new HashMap<String, Object>();
+    String text = StringUtils.defaultString(rawText);
+    receipt.put("voucherTemplate", "兴业银行汇款回单");
+    List<String> lines = nonBlankLines(text);
+    receipt.put("voucherNo", firstValueAfterAnyMarker(lines, "唯一流水编号", "回单查询号"));
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "付款人", "收款人", "全称"), "payerName", "payeeName");
+    putPartyValues(receipt, accountValuesFromLines(lines), "payerAccount", "payeeAccount");
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "付款银行", "收款银行"), "payerBank", "payeeBank");
+    receipt.put("purpose", firstValueAfterAnyMarker(lines, "用途"));
+    receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要"));
+    BigDecimal amount = extractAmountNearLabel(text, "写");
+    receipt.put("recognizedAmount", amount == null ? extractAmount(text) : amount);
+    receipt.put("paymentDate", extractDate(text));
+    return receipt;
+  }
+
   private List<String> nonBlankLines(String rawText) {
     List<String> lines = new ArrayList<String>();
     for (String line : StringUtils.split(StringUtils.defaultString(rawText), '\n')) {
@@ -801,27 +887,70 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   private List<String> valuesAfterMarker(List<String> lines, String marker, int maxCount) {
+    return valuesAfterAnyMarker(lines, maxCount, marker);
+  }
+
+  private List<String> valuesAfterAnyMarker(List<String> lines, int maxCount, String... markers) {
+    return valuesAfterAnyMarker(lines, maxCount, true, markers);
+  }
+
+  private List<String> valuesAfterAnyMarker(List<String> lines, int maxCount, boolean skipNumericOnly, String... markers) {
     List<String> values = new ArrayList<String>();
     for (int index = 0; index < lines.size() && values.size() < maxCount; index++) {
       String line = lines.get(index);
-      if (!StringUtils.contains(line, marker)) {
+      String matchedMarker = matchedMarker(line, markers);
+      if (StringUtils.isBlank(matchedMarker)) {
         continue;
       }
-      String inlineValue = StringUtils.trimToEmpty(StringUtils.substringAfter(line, marker));
+      String inlineValue = StringUtils.trimToEmpty(StringUtils.substringAfter(line, matchedMarker));
       if (StringUtils.isNotBlank(inlineValue)) {
         values.add(inlineValue);
       }
       for (int offset = 1; offset <= 6 && index + offset < lines.size() && values.size() < maxCount; offset++) {
         String candidate = lines.get(index + offset);
-        if (isReceiptMarker(candidate) || candidate.matches("^\\d{6,}$")) {
+        if (isReceiptMarker(candidate) || (skipNumericOnly && candidate.matches("^\\d{6,}$"))) {
           continue;
         }
-        if (StringUtils.contains(candidate, marker)) {
-          candidate = StringUtils.trimToEmpty(StringUtils.substringAfter(candidate, marker));
+        String nestedMarker = matchedMarker(candidate, markers);
+        if (StringUtils.isNotBlank(nestedMarker)) {
+          candidate = StringUtils.trimToEmpty(StringUtils.substringAfter(candidate, nestedMarker));
         }
         if (StringUtils.isNotBlank(candidate)) {
           values.add(candidate);
         }
+      }
+    }
+    return values;
+  }
+
+  private void putPartyValues(Map<String, Object> receipt, List<String> values, String payerKey, String payeeKey) {
+    if (values == null || values.isEmpty()) {
+      return;
+    }
+    if (receipt.get(payerKey) == null) {
+      receipt.put(payerKey, values.get(0));
+    }
+    if (values.size() > 1 && receipt.get(payeeKey) == null) {
+      receipt.put(payeeKey, values.get(1));
+    }
+  }
+
+  private void putIfNotBlank(Map<String, Object> receipt, String key, String value) {
+    if (StringUtils.isNotBlank(value)) {
+      receipt.put(key, value);
+    }
+  }
+
+  private List<String> accountValuesFromLines(List<String> lines) {
+    List<String> values = new ArrayList<String>();
+    Pattern accountPattern = Pattern.compile("^(?:账\\s*)?号[:：]?\\s*([0-9]{10,})$");
+    for (String line : lines) {
+      Matcher matcher = accountPattern.matcher(StringUtils.trimToEmpty(line));
+      if (matcher.find()) {
+        values.add(matcher.group(1));
+      }
+      if (values.size() >= 2) {
+        break;
       }
     }
     return values;
@@ -846,15 +975,33 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   private String firstValueAfterMarker(List<String> lines, String marker) {
+    return firstValueAfterAnyMarker(lines, marker);
+  }
+
+  private String firstValueAfterAnyMarker(List<String> lines, String... markers) {
     for (int index = 0; index < lines.size(); index++) {
-      if (!StringUtils.equals(lines.get(index), marker)) {
+      String marker = matchedMarker(lines.get(index), markers);
+      if (StringUtils.isBlank(marker)) {
         continue;
+      }
+      String inlineValue = StringUtils.trimToEmpty(StringUtils.substringAfter(lines.get(index), marker));
+      if (StringUtils.isNotBlank(inlineValue)) {
+        return inlineValue;
       }
       for (int offset = 1; offset <= 5 && index + offset < lines.size(); offset++) {
         String candidate = lines.get(index + offset);
         if (!isReceiptMarker(candidate)) {
           return candidate;
         }
+      }
+    }
+    return null;
+  }
+
+  private String matchedMarker(String line, String... markers) {
+    for (String marker : markers) {
+      if (StringUtils.isNotBlank(marker) && StringUtils.contains(line, marker)) {
+        return marker;
       }
     }
     return null;
@@ -875,7 +1022,11 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
 
   private boolean isReceiptMarker(String value) {
     String[] markers = {"全称", "付款人", "收款人", "账号", "开户行", "小写金额", "大写金额",
-        "用途", "钞汇标志", "摘要", "币别：", "日期：", "凭证号：", "账户明细编号-交易流水号："};
+        "用途", "钞汇标志", "摘要", "币别：", "日期：", "凭证号：", "账户明细编号-交易流水号：",
+        "账户名称", "户名", "⼾ 名", "开户银行", "开⼾银⾏", "收款人户名", "付款人户名",
+        "收款账号", "付款账号", "收款人开户行", "付款人开户行", "电子回单编号", "回单编号",
+        "电子回单号码", "交易流水号", "交易流水号-传票序号", "唯一流水编号", "回单查询号",
+        "付款银行", "收款银行", "交易名称", "交易时间", "申请日期", "打印日期", "打印渠道"};
     for (String marker : markers) {
       if (StringUtils.equals(value, marker)) {
         return true;
