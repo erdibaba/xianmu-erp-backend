@@ -50,6 +50,8 @@ public interface ErpSaleOrderService {
 
   ErpSaleOutboundBatchEntity uploadOutboundBatchBankSlip(Long saleOrderId, Long batchId, MultipartFile[] files, Long userId) throws Exception;
 
+  ErpSaleOutboundBatchEntity bindOutboundBatchScanLink(Long saleOrderId, Long batchId, String scanUrl, Long userId) throws Exception;
+
   ErpSaleOutboundBatchEntity confirmOutboundBatch(Long batchId, Long userId);
 
   void voidOutboundBatch(Long batchId, Long userId);

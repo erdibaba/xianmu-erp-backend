@@ -40,6 +40,8 @@ import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundBatchDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptItemDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundScanDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundScanItemDao;
 import io.renren.modules.erp.dao.ErpSaleUploadNoticeDao;
 import io.renren.modules.erp.dao.ErpStockLedgerDao;
 import io.renren.modules.erp.dao.ErpWarehouseDao;
@@ -55,6 +57,8 @@ import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundScanEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundScanItemEntity;
 import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
@@ -70,6 +74,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -135,6 +144,10 @@ implements ErpSaleOrderService {
     private ErpSaleOutboundReceiptDao erpSaleOutboundReceiptDao;
     @Autowired
     private ErpSaleOutboundReceiptItemDao erpSaleOutboundReceiptItemDao;
+    @Autowired
+    private ErpSaleOutboundScanDao erpSaleOutboundScanDao;
+    @Autowired
+    private ErpSaleOutboundScanItemDao erpSaleOutboundScanItemDao;
     @Autowired
     private ErpPartnerDao erpPartnerDao;
     @Autowired
@@ -406,6 +419,10 @@ implements ErpSaleOrderService {
                 currentFiles.add(file);
             }
         }
+        if (this.loadOutboundScanByBatch(batch.getId()) != null) {
+            this.refreshOutboundBatchStatus(batch.getId());
+            return this.loadOutboundReceiptByBatch(batch.getId());
+        }
         JSONObject recognized = this.runOutboundReceiptOcr(currentFiles);
         ErpSaleOutboundReceiptEntity receipt = this.buildOutboundReceiptFromOcr(saleOrderId, recognized);
         receipt.setBatchId(batch.getId());
@@ -498,11 +515,74 @@ implements ErpSaleOrderService {
 
     @Override
     @Transactional(rollbackFor={Exception.class})
+    public ErpSaleOutboundBatchEntity bindOutboundBatchScanLink(Long saleOrderId, Long batchId, String scanUrl, Long userId) throws Exception {
+        ErpSaleOutboundBatchEntity batch = this.requireEditableOutboundBatch(saleOrderId, batchId);
+        if (StringUtils.isBlank((String)scanUrl)) {
+            throw new RuntimeException("请先填写扫码链接");
+        }
+        Map<String, String> query = this.parseQueryParams(scanUrl);
+        String orderNum = query.get("orderNum");
+        String imei = query.get("imei");
+        if (StringUtils.isBlank((String)orderNum) || StringUtils.isBlank((String)imei)) {
+            throw new RuntimeException("扫码链接缺少orderNum或imei参数");
+        }
+        JSONObject response = this.fetchShunshiOrder(orderNum, imei);
+        if (response == null || response.getIntValue("code") != 200 || response.getJSONObject("data") == null) {
+            throw new RuntimeException(response == null ? "顺势云数据抓取失败" : this.firstNonBlank(response.getString("msg"), "顺势云数据抓取失败"));
+        }
+        JSONObject data = response.getJSONObject("data");
+        Date now = new Date();
+        this.deleteOutboundScanData(batchId);
+        ErpSaleOutboundScanEntity scan = new ErpSaleOutboundScanEntity();
+        scan.setSaleOrderId(saleOrderId);
+        scan.setBatchId(batchId);
+        scan.setScanUrl(scanUrl);
+        scan.setOrderNum(this.firstNonBlank(data.getString("orderNum"), orderNum));
+        scan.setImei(imei);
+        scan.setScanOrderTime(this.parseDateTime(data.getString("orderTime")));
+        scan.setCustomerName(StringUtils.trimToEmpty((String)data.getString("orderCustomerName")));
+        scan.setTotalBoxes(this.parseInteger(data.getString("orderTotalNum")));
+        scan.setTotalWeight(this.parseDecimal(data.getString("orderTotalWeight")));
+        scan.setRawJson(response.toJSONString());
+        scan.setCreateTime(now);
+        scan.setUpdateTime(now);
+        this.erpSaleOutboundScanDao.insert(scan);
+
+        ErpSaleOutboundReceiptEntity receipt = new ErpSaleOutboundReceiptEntity();
+        receipt.setSaleOrderId(saleOrderId);
+        receipt.setBatchId(batchId);
+        receipt.setOutboundOrderNo(scan.getOrderNum());
+        receipt.setCustomerName(scan.getCustomerName());
+        receipt.setRawText(response.toJSONString());
+        List<ErpSaleOutboundReceiptItemEntity> receiptItems = new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+        JSONArray itemArray = data.getJSONArray("commodityVoList");
+        if (itemArray != null) {
+            for (int i = 0; i < itemArray.size(); i++) {
+                JSONObject itemJson = itemArray.getJSONObject(i);
+                ErpSaleOutboundScanItemEntity scanItem = this.buildOutboundScanItem(scan, itemJson, i + 1, now);
+                this.erpSaleOutboundScanItemDao.insert(scanItem);
+                receiptItems.add(this.buildOutboundReceiptItemFromScan(scan, scanItem));
+            }
+        }
+        if (receiptItems.isEmpty()) {
+            throw new RuntimeException("顺势云未返回产品明细，请核对链接");
+        }
+        receipt.setItemList(receiptItems);
+        ErpSaleOutboundReceiptEntity saved = this.upsertOutboundReceipt(receipt, userId);
+        this.refreshOutboundBatchStatus(batch.getId());
+        return this.loadOutboundBatch(batch.getId());
+    }
+
+    @Override
+    @Transactional(rollbackFor={Exception.class})
     public ErpSaleOutboundBatchEntity confirmOutboundBatch(Long batchId, Long userId) {
         ErpSaleOutboundBatchEntity batch = this.requireEditableOutboundBatch(null, batchId);
         ErpSaleOutboundReceiptEntity receipt = this.loadOutboundReceiptByBatch(batchId);
         if (receipt == null || receipt.getItemList() == null || receipt.getItemList().isEmpty()) {
             throw new RuntimeException("请先上传并保存出库回单后再确认批次");
+        }
+        if (!this.hasOutboundReceiptFile(batch.getSaleOrderId(), batchId)) {
+            throw new RuntimeException("请先上传出库回单原件");
         }
         this.validateOutboundReceiptRequiredItems(receipt);
         if (batch.getBankSlipFileId() == null) {
@@ -1597,6 +1677,17 @@ implements ErpSaleOrderService {
         return this.loadOutboundBatch(batchId);
     }
 
+    private boolean hasOutboundReceiptFile(Long saleOrderId, Long batchId) {
+        if (saleOrderId == null || batchId == null) {
+            return false;
+        }
+        Number count = (Number)this.erpSaleOrderFileDao.selectCount((Wrapper)((QueryWrapper)((QueryWrapper)new QueryWrapper()
+                .eq((Object)"sale_order_id", (Object)saleOrderId))
+                .eq((Object)"batch_id", (Object)batchId))
+                .eq((Object)"file_type", (Object)FILE_TYPE_OUTBOUND_RECEIPT));
+        return count != null && count.intValue() > 0;
+    }
+
     private List<ErpSaleOutboundBatchEntity> loadOutboundBatches(Long saleOrderId) {
         List<ErpSaleOutboundBatchEntity> batches = this.erpSaleOutboundBatchDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper()
                 .eq((Object)"sale_order_id", (Object)saleOrderId))
@@ -1623,6 +1714,7 @@ implements ErpSaleOrderService {
             return;
         }
         Long batchId = batch.getId();
+        this.deleteOutboundScanData(batchId);
         ErpSaleOutboundReceiptEntity receipt = this.loadOutboundReceiptByBatch(batchId);
         if (receipt != null && receipt.getId() != null) {
             this.erpSaleOutboundReceiptItemDao.delete((Wrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)receipt.getId()));
@@ -1642,6 +1734,7 @@ implements ErpSaleOrderService {
             return;
         }
         batch.setReceipt(this.loadOutboundReceiptByBatch(batch.getId()));
+        batch.setScan(this.loadOutboundScanByBatch(batch.getId()));
         if (batch.getBankSlipFileId() != null) {
             batch.setBankSlipFile((ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(batch.getBankSlipFileId()));
         }
@@ -1652,6 +1745,158 @@ implements ErpSaleOrderService {
         fileWrapper.orderByAsc("line_no", "id");
         List<ErpSaleOrderFileEntity> receiptFiles = this.erpSaleOrderFileDao.selectList((Wrapper)fileWrapper);
         batch.setReceiptFileList(receiptFiles == null ? new ArrayList<ErpSaleOrderFileEntity>() : receiptFiles);
+    }
+
+    private ErpSaleOutboundScanEntity loadOutboundScanByBatch(Long batchId) {
+        if (batchId == null) {
+            return null;
+        }
+        ErpSaleOutboundScanEntity scan = (ErpSaleOutboundScanEntity)this.erpSaleOutboundScanDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"batch_id", (Object)batchId)).last("limit 1"));
+        if (scan == null) {
+            return null;
+        }
+        List items = this.erpSaleOutboundScanItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"scan_id", (Object)scan.getId())).orderByAsc((Object[])new String[]{"line_no", "id"}));
+        scan.setItemList(items);
+        return scan;
+    }
+
+    private void deleteOutboundScanData(Long batchId) {
+        if (batchId == null) {
+            return;
+        }
+        List<ErpSaleOutboundScanEntity> scans = this.erpSaleOutboundScanDao.selectList((Wrapper)new QueryWrapper().eq((Object)"batch_id", (Object)batchId));
+        if (scans == null) {
+            return;
+        }
+        for (ErpSaleOutboundScanEntity scan : scans) {
+            if (scan == null || scan.getId() == null) continue;
+            this.erpSaleOutboundScanItemDao.delete((Wrapper)new QueryWrapper().eq((Object)"scan_id", (Object)scan.getId()));
+            this.erpSaleOutboundScanDao.deleteById(scan.getId());
+        }
+    }
+
+    private ErpSaleOutboundScanItemEntity buildOutboundScanItem(ErpSaleOutboundScanEntity scan, JSONObject itemJson, int lineNo, Date now) {
+        ErpSaleOutboundScanItemEntity item = new ErpSaleOutboundScanItemEntity();
+        item.setScanId(scan.getId());
+        item.setSaleOrderId(scan.getSaleOrderId());
+        item.setBatchId(scan.getBatchId());
+        item.setLineNo(lineNo);
+        item.setScanProductName(StringUtils.trimToEmpty((String)itemJson.getString("commodityChaocodeName")));
+        item.setRecognizedProductCode(this.extractScanProductCode(item.getScanProductName()));
+        item.setBoxes(this.parseInteger(itemJson.getString("commodityAmount")));
+        item.setTotalWeight(this.parseDecimal(itemJson.getString("commodityTotalWeight")));
+        JSONArray weightList = itemJson.getJSONArray("weightList");
+        item.setWeightListJson(weightList == null ? "[]" : weightList.toJSONString());
+        ErpProductEntity product = this.findProductByRecognizedCode(item.getRecognizedProductCode());
+        if (product != null) {
+            item.setProductId(product.getId());
+            item.setProductCode(product.getProductCode());
+            item.setProductName(product.getProductName());
+            item.setProductNameEn(product.getProductNameEn());
+        } else {
+            item.setProductName(item.getScanProductName());
+        }
+        item.setCreateTime(now);
+        item.setUpdateTime(now);
+        return item;
+    }
+
+    private ErpSaleOutboundReceiptItemEntity buildOutboundReceiptItemFromScan(ErpSaleOutboundScanEntity scan, ErpSaleOutboundScanItemEntity scanItem) {
+        ErpSaleOutboundReceiptItemEntity item = new ErpSaleOutboundReceiptItemEntity();
+        item.setSaleOrderId(scan.getSaleOrderId());
+        item.setBatchId(scan.getBatchId());
+        item.setLineNo(scanItem.getLineNo());
+        item.setOutboundOrderNo(scan.getOrderNum());
+        item.setCustomerName(scan.getCustomerName());
+        item.setProductId(scanItem.getProductId());
+        item.setProductCode(scanItem.getProductCode());
+        item.setRecognizedProductCode(scanItem.getRecognizedProductCode());
+        item.setProductName(scanItem.getProductName());
+        item.setProductNameEn(scanItem.getProductNameEn());
+        item.setUnit("箱");
+        item.setShippedQty(scanItem.getBoxes());
+        item.setTotalWeight(scanItem.getTotalWeight());
+        if (this.defaultInt(scanItem.getBoxes()) > 0) {
+            item.setAvgWeight(this.defaultDecimal(scanItem.getTotalWeight()).divide(new BigDecimal(this.defaultInt(scanItem.getBoxes())), 4, RoundingMode.HALF_UP));
+        }
+        return item;
+    }
+
+    private JSONObject fetchShunshiOrder(String orderNum, String imei) throws Exception {
+        String url = "http://shunshiyun.com/prod-api/order/list?orderNum=" + URLEncoder.encode(orderNum, StandardCharsets.UTF_8.name()) + "&imei=" + URLEncoder.encode(imei, StandardCharsets.UTF_8.name());
+        HttpURLConnection connection = (HttpURLConnection)new URL(url).openConnection();
+        connection.setRequestMethod("GET");
+        connection.setConnectTimeout(10000);
+        connection.setReadTimeout(20000);
+        connection.setRequestProperty("Accept", "application/json,text/plain,*/*");
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0");
+        int status = connection.getResponseCode();
+        InputStream inputStream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
+        String body = new String(this.readAllBytes(inputStream), StandardCharsets.UTF_8);
+        if (status < 200 || status >= 300) {
+            throw new RuntimeException("顺势云接口请求失败：" + status);
+        }
+        return JSON.parseObject(body);
+    }
+
+    private byte[] readAllBytes(InputStream inputStream) throws IOException {
+        if (inputStream == null) {
+            return new byte[0];
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        int length;
+        while ((length = inputStream.read(buffer)) != -1) {
+            output.write(buffer, 0, length);
+        }
+        return output.toByteArray();
+    }
+
+    private Map<String, String> parseQueryParams(String url) throws Exception {
+        Map<String, String> result = new HashMap<String, String>();
+        String query = new URI(url).getRawQuery();
+        if (StringUtils.isBlank((String)query)) {
+            return result;
+        }
+        for (String pair : query.split("&")) {
+            if (StringUtils.isBlank((String)pair)) continue;
+            int index = pair.indexOf('=');
+            String key = index >= 0 ? pair.substring(0, index) : pair;
+            String value = index >= 0 ? pair.substring(index + 1) : "";
+            result.put(URLDecoder.decode(key, StandardCharsets.UTF_8.name()), URLDecoder.decode(value, StandardCharsets.UTF_8.name()));
+        }
+        return result;
+    }
+
+    private String extractScanProductCode(String text) {
+        if (StringUtils.isBlank((String)text)) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = Pattern.compile("C\\s*(\\d{4,6})", Pattern.CASE_INSENSITIVE).matcher(text);
+        return matcher.find() ? "C" + matcher.group(1) : null;
+    }
+
+    private ErpProductEntity findProductByRecognizedCode(String recognizedCode) {
+        String mainCode = this.normalizeMainProductCode(recognizedCode);
+        if (StringUtils.isBlank((String)mainCode)) {
+            return null;
+        }
+        ErpProductEntity product = (ErpProductEntity)this.erpProductDao.selectOne((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"product_code", (Object)mainCode)).last("limit 1"));
+        if (product != null) {
+            return product;
+        }
+        List<ErpProductEntity> products = this.erpProductDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().like((Object)"alias_codes", (Object)mainCode)).last("limit 20"));
+        if (products == null) {
+            return null;
+        }
+        for (ErpProductEntity candidate : products) {
+            if (candidate == null || StringUtils.isBlank((String)candidate.getAliasCodes())) continue;
+            List<String> aliases = Arrays.asList(candidate.getAliasCodes().split("[,，;；\\s]+"));
+            if (aliases.contains(mainCode) || aliases.contains(recognizedCode)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private ErpSaleOutboundReceiptEntity loadOutboundReceipt(Long saleOrderId) {
@@ -2489,6 +2734,45 @@ implements ErpSaleOrderService {
 
     private int defaultInt(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private Integer parseInteger(String value) {
+        if (StringUtils.isBlank((String)value)) {
+            return 0;
+        }
+        try {
+            return new BigDecimal(value.replace(",", "").trim()).intValue();
+        }
+        catch (Exception ex) {
+            return 0;
+        }
+    }
+
+    private BigDecimal parseDecimal(String value) {
+        if (StringUtils.isBlank((String)value)) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            return new BigDecimal(value.replace(",", "").trim());
+        }
+        catch (Exception ex) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private Date parseDateTime(String value) {
+        if (StringUtils.isBlank((String)value)) {
+            return null;
+        }
+        for (String pattern : new String[]{"yyyy-MM-dd HH:mm:ss", "yyyy/MM/dd HH:mm:ss", "yyyy-MM-dd"}) {
+            try {
+                return new SimpleDateFormat(pattern).parse(value.trim());
+            }
+            catch (Exception ex) {
+                // try next pattern
+            }
+        }
+        return null;
     }
 
     private int defaultFlag(Integer value) {

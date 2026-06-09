@@ -41,4 +41,7 @@ public class ErpSaleOutboundBatchEntity implements Serializable {
 
   @TableField(exist = false)
   private List<ErpSaleOrderFileEntity> receiptFileList = new ArrayList<ErpSaleOrderFileEntity>();
+
+  @TableField(exist = false)
+  private ErpSaleOutboundScanEntity scan;
 }

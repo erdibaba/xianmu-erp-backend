@@ -211,6 +211,28 @@ public class ErpSaleOrderController extends AbstractController {
     }
   }
 
+  @PostMapping("/outbound/batch/scan-link/bind")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R bindOutboundBatchScanLink(@RequestBody Map<String, Object> params) throws Exception {
+    Long saleOrderId = params.get("saleOrderId") == null ? null : Long.valueOf(String.valueOf(params.get("saleOrderId")));
+    Long batchId = params.get("batchId") == null ? null : Long.valueOf(String.valueOf(params.get("batchId")));
+    String scanUrl = params.get("scanUrl") == null ? null : String.valueOf(params.get("scanUrl"));
+    if (saleOrderId == null || saleOrderId <= 0) {
+      return R.error("请先选择销售单");
+    }
+    if (batchId == null || batchId <= 0) {
+      return R.error("请先选择出库批次");
+    }
+    if (StringUtils.isBlank(scanUrl)) {
+      return R.error("请先填写扫码链接");
+    }
+    try {
+      return R.ok().put("batch", erpSaleOrderService.bindOutboundBatchScanLink(saleOrderId, batchId, scanUrl, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
   @PostMapping("/outbound/batch/confirm")
   @RequiresPermissions("erp:tradeorder:update")
   public R confirmOutboundBatch(@RequestBody Map<String, Object> params) {
