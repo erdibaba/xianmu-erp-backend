@@ -430,6 +430,7 @@ implements ErpSaleOrderService {
         if (receipt.getBatchId() != null) {
             this.requireEditableOutboundBatch(receipt.getSaleOrderId(), receipt.getBatchId());
         }
+        this.validateOutboundReceiptRequiredItems(receipt);
         ErpSaleOutboundReceiptEntity saved = this.upsertOutboundReceipt(receipt, userId);
         if (receipt.getBatchId() != null) {
             this.refreshOutboundBatchStatus(receipt.getBatchId());
@@ -499,6 +500,7 @@ implements ErpSaleOrderService {
         if (receipt == null || receipt.getItemList() == null || receipt.getItemList().isEmpty()) {
             throw new RuntimeException("请先上传并保存出库回单后再确认批次");
         }
+        this.validateOutboundReceiptRequiredItems(receipt);
         if (batch.getBankSlipFileId() == null) {
             throw new RuntimeException("请先上传二批来款水单后再确认批次");
         }
@@ -1761,6 +1763,96 @@ implements ErpSaleOrderService {
         item.setAdjustmentAmount(amount);
     }
 
+    private List<ErpSaleOutboundReceiptItemEntity> buildOutboundSummary(Long saleOrderId) {
+        LinkedHashMap<Long, ErpSaleOutboundReceiptItemEntity> summaryMap = new LinkedHashMap<Long, ErpSaleOutboundReceiptItemEntity>();
+        List<ErpSaleOrderItemEntity> saleItems = this.erpSaleOrderItemDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper()
+                .eq((Object)"sale_order_id", (Object)saleOrderId)).orderByAsc((Object[])new String[]{"line_no", "id"}));
+        for (ErpSaleOrderItemEntity saleItem : saleItems) {
+            if (saleItem == null || saleItem.getProductId() == null) {
+                continue;
+            }
+            ErpSaleOutboundReceiptItemEntity summary = summaryMap.get(saleItem.getProductId());
+            if (summary == null) {
+                summary = new ErpSaleOutboundReceiptItemEntity();
+                summary.setSaleOrderId(saleOrderId);
+                summary.setProductId(saleItem.getProductId());
+                summary.setProductCode(saleItem.getProductCode());
+                summary.setProductName(saleItem.getProductName());
+                summary.setProductNameEn(saleItem.getProductNameEn());
+                summary.setExpectedBoxes(0);
+                summary.setExpectedWeight(BigDecimal.ZERO);
+                summary.setShippedQty(0);
+                summary.setTotalWeight(BigDecimal.ZERO);
+                summary.setSalePriceKg(this.defaultDecimal(saleItem.getSalePriceKg()).setScale(2, RoundingMode.HALF_UP));
+                summaryMap.put(saleItem.getProductId(), summary);
+            }
+            summary.setExpectedBoxes(this.defaultInt(summary.getExpectedBoxes()) + this.defaultInt(saleItem.getBoxes()));
+            summary.setExpectedWeight(this.defaultDecimal(summary.getExpectedWeight()).add(this.defaultDecimal(saleItem.getContractQuantityKg())).setScale(3, RoundingMode.HALF_UP));
+            if (this.defaultDecimal(summary.getSalePriceKg()).compareTo(BigDecimal.ZERO) == 0 && saleItem.getSalePriceKg() != null) {
+                summary.setSalePriceKg(this.defaultDecimal(saleItem.getSalePriceKg()).setScale(2, RoundingMode.HALF_UP));
+            }
+        }
+        List<ErpSaleOutboundReceiptItemEntity> outboundItems = this.loadActiveOutboundItems(saleOrderId);
+        for (ErpSaleOutboundReceiptItemEntity outboundItem : outboundItems) {
+            if (outboundItem == null || outboundItem.getProductId() == null) {
+                continue;
+            }
+            ErpSaleOutboundReceiptItemEntity summary = summaryMap.get(outboundItem.getProductId());
+            if (summary == null) {
+                summary = new ErpSaleOutboundReceiptItemEntity();
+                summary.setSaleOrderId(saleOrderId);
+                summary.setProductId(outboundItem.getProductId());
+                summary.setProductCode(outboundItem.getProductCode());
+                summary.setProductName(outboundItem.getProductName());
+                summary.setProductNameEn(outboundItem.getProductNameEn());
+                summary.setExpectedBoxes(0);
+                summary.setExpectedWeight(BigDecimal.ZERO);
+                summary.setShippedQty(0);
+                summary.setTotalWeight(BigDecimal.ZERO);
+                summary.setSalePriceKg(BigDecimal.ZERO);
+                summaryMap.put(outboundItem.getProductId(), summary);
+            }
+            summary.setShippedQty(this.defaultInt(summary.getShippedQty()) + this.defaultInt(outboundItem.getShippedQty()));
+            summary.setTotalWeight(this.defaultDecimal(summary.getTotalWeight()).add(this.defaultDecimal(outboundItem.getTotalWeight())).setScale(3, RoundingMode.HALF_UP));
+        }
+        List<ErpSaleOutboundReceiptItemEntity> result = new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+        int lineNo = 1;
+        for (ErpSaleOutboundReceiptItemEntity summary : summaryMap.values()) {
+            summary.setLineNo(lineNo++);
+            int diffBoxes = this.defaultInt(summary.getExpectedBoxes()) - this.defaultInt(summary.getShippedQty());
+            BigDecimal diffWeight = this.defaultDecimal(summary.getExpectedWeight()).subtract(this.defaultDecimal(summary.getTotalWeight())).setScale(3, RoundingMode.HALF_UP);
+            BigDecimal amount = diffWeight.multiply(this.defaultDecimal(summary.getSalePriceKg())).setScale(2, RoundingMode.HALF_UP);
+            summary.setDiffBoxes(diffBoxes);
+            summary.setDiffWeight(diffWeight);
+            summary.setAdjustmentAmount(amount);
+            result.add(summary);
+        }
+        return result;
+    }
+
+    private List<ErpSaleOutboundReceiptItemEntity> loadActiveOutboundItems(Long saleOrderId) {
+        List<ErpSaleOutboundBatchEntity> activeBatches = this.erpSaleOutboundBatchDao.selectList((Wrapper)new QueryWrapper<ErpSaleOutboundBatchEntity>()
+                .eq("sale_order_id", saleOrderId)
+                .ne("status", OUTBOUND_BATCH_VOID));
+        if (activeBatches == null || activeBatches.isEmpty()) {
+            return new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+        }
+        List<Long> batchIds = new ArrayList<Long>();
+        for (ErpSaleOutboundBatchEntity batch : activeBatches) {
+            if (batch != null && batch.getId() != null) {
+                batchIds.add(batch.getId());
+            }
+        }
+        if (batchIds.isEmpty()) {
+            return new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+        }
+        QueryWrapper<ErpSaleOutboundReceiptItemEntity> itemWrapper = new QueryWrapper<ErpSaleOutboundReceiptItemEntity>();
+        itemWrapper.eq("sale_order_id", saleOrderId);
+        itemWrapper.in("batch_id", batchIds);
+        itemWrapper.orderByAsc("batch_id", "line_no", "id");
+        return this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)itemWrapper);
+    }
+
     private String normalizeContainerNo(String value) {
         return StringUtils.trimToEmpty((String)value).replaceAll("\\s+", "").toUpperCase();
     }
@@ -1842,20 +1934,47 @@ implements ErpSaleOrderService {
         if (order == null) {
             return;
         }
-        QueryWrapper<ErpSaleOutboundBatchEntity> batchWrapper = new QueryWrapper<ErpSaleOutboundBatchEntity>();
-        batchWrapper.eq("sale_order_id", saleOrderId);
-        batchWrapper.eq("status", OUTBOUND_BATCH_CONFIRMED);
-        List<ErpSaleOutboundBatchEntity> confirmedBatches = this.erpSaleOutboundBatchDao.selectList((Wrapper)batchWrapper);
-        int shippedBoxes = 0;
-        if (confirmedBatches != null) {
-            for (ErpSaleOutboundBatchEntity batch : confirmedBatches) {
-                ErpSaleOutboundReceiptEntity receipt = this.loadOutboundReceiptByBatch(batch.getId());
-                shippedBoxes += receipt == null ? 0 : this.calcOutboundShippedBoxes(receipt.getItemList());
-            }
-        }
-        order.setOutboundReceiptConfirmed(shippedBoxes >= this.calcSaleTotalBoxes(saleOrderId) && shippedBoxes > 0 ? 1 : 0);
+        order.setOutboundReceiptConfirmed(this.isOutboundBoxesCompleted(saleOrderId) ? 1 : 0);
         order.setUpdateTime(new Date());
         this.updateById(order);
+    }
+
+    private boolean isOutboundBoxesCompleted(Long saleOrderId) {
+        List<ErpSaleOutboundReceiptItemEntity> summaryList = this.buildOutboundSummary(saleOrderId);
+        if (summaryList == null || summaryList.isEmpty()) {
+            return false;
+        }
+        for (ErpSaleOutboundReceiptItemEntity summary : summaryList) {
+            if (this.defaultInt(summary.getExpectedBoxes()) <= 0) {
+                return false;
+            }
+            if (this.defaultInt(summary.getExpectedBoxes()) != this.defaultInt(summary.getShippedQty())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void validateOutboundReceiptRequiredItems(ErpSaleOutboundReceiptEntity receipt) {
+        if (receipt == null || receipt.getItemList() == null || receipt.getItemList().isEmpty()) {
+            throw new RuntimeException("出库回单明细不能为空");
+        }
+        int index = 1;
+        for (ErpSaleOutboundReceiptItemEntity item : receipt.getItemList()) {
+            if (item == null) {
+                throw new RuntimeException("第" + index + "行出库回单明细不能为空");
+            }
+            if (item.getProductId() == null) {
+                throw new RuntimeException("第" + index + "行系统编码不能为空");
+            }
+            if (item.getShippedQty() == null || item.getShippedQty() <= 0) {
+                throw new RuntimeException("第" + index + "行实际箱数必须大于0");
+            }
+            if (item.getTotalWeight() == null || item.getTotalWeight().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new RuntimeException("第" + index + "行实际重量必须大于0");
+            }
+            index++;
+        }
     }
 
     private void validateOutboundReceiptMatched(Long saleOrderId) {
@@ -1897,6 +2016,7 @@ implements ErpSaleOrderService {
         order.setFileList(files);
         order.setOutboundReceipt(this.loadOutboundReceipt(order.getId()));
         order.setOutboundBatchList(this.loadOutboundBatches(order.getId()));
+        order.setOutboundSummaryList(this.buildOutboundSummary(order.getId()));
     }
 
     private List<ErpSaleOrderItemEntity> buildSpotRequestItems(List<ErpSaleOrderItemEntity> items) {

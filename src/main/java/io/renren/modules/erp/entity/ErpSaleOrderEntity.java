@@ -81,6 +81,9 @@ public class ErpSaleOrderEntity implements Serializable {
   private List<ErpSaleOutboundBatchEntity> outboundBatchList = new ArrayList<ErpSaleOutboundBatchEntity>();
 
   @TableField(exist = false)
+  private List<ErpSaleOutboundReceiptItemEntity> outboundSummaryList = new ArrayList<ErpSaleOutboundReceiptItemEntity>();
+
+  @TableField(exist = false)
   private Integer uploadNoticeStatus;
 
   @TableField(exist = false)
