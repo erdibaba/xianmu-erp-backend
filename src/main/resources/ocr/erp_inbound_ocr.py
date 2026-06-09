@@ -81,12 +81,100 @@ def normalize_sku(product_code, container_token):
     return f"C{product_code}-{container_token}"
 
 
+def normalize_number_token(value):
+    value = (value or "").strip()
+    value = value.replace(",", ".").replace("，", ".").replace(":", ".").replace("：", ".")
+    value = value.replace("O", "0").replace("o", "0").replace("I", "1").replace("l", "1")
+    return value
+
+
+def extract_date_and_container(tokens):
+    joined = "".join(tokens)
+    date_match = re.search(r"(20\d{2}-\d{2}-\d{2})", joined)
+    inbound_date = date_match.group(1) if date_match else None
+    container_match = re.search(r"([MN4O0]?CRU\d{7})", joined)
+    container_token = None
+    if container_match:
+        container_token = container_match.group(1)
+        container_token = re.sub(r"^[N4O0]?CRU", "MCRU", container_token)
+    return inbound_date, container_token
+
+
+def likely_product_code(token):
+    token = (token or "").strip()
+    if re.search(r"[A-Z]*RU\d{7}", token, re.IGNORECASE) or re.search(r"20\d{2}-\d{2}-\d{2}", token):
+        return None
+    match = re.match(r"^C?(\d{5})-?$", token, re.IGNORECASE)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def parse_relaxed_inbound_row(tokens):
+    tokens = merge_date_tokens([token.strip() for token in tokens if token and token.strip()])
+    if len(tokens) < 5:
+        return None
+    row_text = " | ".join(tokens)
+    if any(marker in row_text for marker in ("SKU", "品名", "发货人", "收货人", "出门证号", "打单时间", "单时间")):
+        return None
+    if "合计" in row_text and not re.search(r"\d{5}", row_text):
+        return None
+
+    product_code = None
+    product_code_index = -1
+    for idx, token in enumerate(tokens):
+        code = likely_product_code(token)
+        if code:
+            product_code = code
+            product_code_index = idx
+            break
+
+    product_name = None
+    for token in tokens:
+        if "冰鲜" in token and "收货清单" not in token:
+            product_name = clean_product_name(token)
+            break
+
+    numeric_values = []
+    for idx, token in enumerate(tokens):
+        if idx == product_code_index:
+            continue
+        normalized = normalize_number_token(token)
+        if re.match(r"^\d+(?:\.\d+)?$", normalized):
+            numeric_values.append(normalized)
+
+    int_values = [int(value) for value in numeric_values if re.match(r"^\d+$", value) and int(value) <= 10000]
+    decimal_values = [value for value in numeric_values if re.match(r"^\d+\.\d+$", value)]
+    inbound_date, container_token = extract_date_and_container(tokens)
+
+    expected_qty = int_values[0] if len(int_values) >= 1 else None
+    actual_qty = int_values[1] if len(int_values) >= 2 else None
+    spec_weight = dec(decimal_values[0]) if decimal_values else None
+
+    if not any([product_code, product_name, expected_qty is not None, actual_qty is not None, inbound_date, container_token, spec_weight is not None]):
+        return None
+
+    return {
+        "productCode": product_code,
+        "skuCode": normalize_sku(product_code, container_token) if product_code else None,
+        "productName": product_name,
+        "specWeight": dec_str(spec_weight, "0.0000") if spec_weight is not None else None,
+        "unit": "箱" if expected_qty is not None or actual_qty is not None else None,
+        "expectedQty": expected_qty,
+        "actualQty": actual_qty,
+        "temperatureZone": "冷鲜" if "冰鲜" in row_text else None,
+        "productionDate": normalize_date(inbound_date),
+        "expiryDate": None,
+        "shelfLifeDays": None
+    }
+
+
 def parse_row_tokens(tokens):
     tokens = merge_date_tokens(tokens)
     joined = " | ".join(tokens)
     product_code_match = re.search(r"C(\d{5})", joined)
     if not product_code_match:
-        return None
+        return parse_relaxed_inbound_row(tokens)
     product_code = product_code_match.group(1)
 
     container_match = re.search(r"(MCRU\d{7}(?:-\d+)?)", joined)
@@ -174,18 +262,21 @@ def parse_file(path):
                 table_started = True
             row_idx += 1
             continue
-        if "发货人" in row_text or "第" in row_text and "页" in row_text or "合计" in row_text:
+        if "发货人" in row_text or "第" in row_text and "页" in row_text:
+            row_idx += 1
+            continue
+        if "合计" in row_text and not re.search(r"\d{5}-?", row_text):
             row_idx += 1
             continue
 
         combined = list(tokens)
-        has_code = re.search(r"C\d{5}", row_text) is not None
-        has_container = re.search(r"MCRU\d{7}", row_text) is not None
+        has_code = re.search(r"(?:C)?\d{5}", row_text) is not None
+        has_container = re.search(r"[MN4O0]?CRU\d{7}", row_text) is not None
         if row_idx + 1 < len(rows):
             next_tokens = [token.strip() for token in rows[row_idx + 1]["texts"] if token.strip()]
             next_text = " | ".join(next_tokens)
-            next_is_data = re.search(r"(MCRU\d{7}|C\d{5})", next_text) is not None and "SKU" not in next_text and "发货人" not in next_text
-            if next_is_data and (not has_container or len([token for token in tokens if re.match(r"^\d+\.\d+$", token)]) == 0):
+            next_is_data = re.search(r"([MN4O0]?CRU\d{7}|(?:C)?\d{5})", next_text) is not None and "SKU" not in next_text and "发货人" not in next_text
+            if next_is_data and not has_code and (not has_container or len([token for token in tokens if re.match(r"^\d+\.\d+$", token)]) == 0):
                 combined.extend(next_tokens)
                 row_idx += 1
 
