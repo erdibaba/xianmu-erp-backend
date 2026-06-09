@@ -12,6 +12,7 @@ public class ErpRecognizedPackingItemVo implements Serializable {
   private String sourceProductCode;
   private String productName;
   private String productNameEn;
+  private String factoryNo;
   private String totalBoxes;
   private String totalWeight;
   private String shelfLifeDays;

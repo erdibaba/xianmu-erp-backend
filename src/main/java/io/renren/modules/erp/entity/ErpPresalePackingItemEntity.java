@@ -23,6 +23,7 @@ public class ErpPresalePackingItemEntity implements Serializable {
   private String sourceProductCode;
   private String productName;
   private String productNameEn;
+  private String factoryNo;
   private Integer totalBoxes;
   private BigDecimal totalWeight;
   private Integer shelfLifeDays;

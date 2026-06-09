@@ -557,6 +557,10 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     if (product == null) {
       throw new RuntimeException("装箱单存在未选择系统产品的明细，无法保存");
     }
+    if (StringUtils.isBlank(item.getFactoryNo())) {
+      throw new RuntimeException("装箱单产品厂号不能为空");
+    }
+    item.setFactoryNo(StringUtils.trimToEmpty(item.getFactoryNo()));
     item.setProductId(product.getId());
     item.setProductCode(product.getProductCode());
     if (StringUtils.isBlank(item.getSourceProductCode())) {

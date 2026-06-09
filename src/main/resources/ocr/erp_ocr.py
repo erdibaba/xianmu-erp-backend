@@ -458,6 +458,38 @@ def add_days(date_text, days):
     return f"{expiry.isoformat()} 00:00:00"
 
 
+def extract_factory_no_from_text(text):
+    m = re.search(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\b\s+\1\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}", text or "")
+    return m.group(1) if m else None
+
+
+def extract_factory_no_from_product_section(section):
+    section = section or ""
+    markers = [
+        "registered processing",
+        "registered slaughterhouses",
+    ]
+    for marker in markers:
+        idx = section.lower().find(marker)
+        if idx < 0:
+            continue
+        tail = section[idx:idx + 500]
+        m = re.search(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\s*,", tail)
+        if m:
+            return m.group(1)
+    return None
+
+
+def extract_packing_factory_numbers(text):
+    matches = list(re.finditer(r"Product Item\s+\d+\b", text or "", re.I))
+    factory_numbers = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        factory_numbers.append(extract_factory_no_from_product_section(text[start:end]))
+    return factory_numbers
+
+
 def parse_packing(text):
     flat_text = normalize_text(text)
     contract_no = first_match(flat_text, r"\b(B\d+/\d+)\b")
@@ -502,6 +534,12 @@ def parse_packing(text):
 
     if not item_list:
       item_list = parse_packing_ocr_lines(lines, shelf_life_days or "0")
+
+    factory_numbers = extract_packing_factory_numbers(text)
+    default_factory_no = extract_factory_no_from_text(text)
+    for item_index, item in enumerate(item_list):
+      factory_no = factory_numbers[item_index] if item_index < len(factory_numbers) else None
+      item["factoryNo"] = factory_no or default_factory_no
 
     total_boxes = str(sum(int(item.get("totalBoxes") or 0) for item in item_list))
     total_weight = dec_str(sum((dec(item.get("totalWeight")) or Decimal("0.00")) for item in item_list), "0.00")

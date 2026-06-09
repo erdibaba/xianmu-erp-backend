@@ -154,6 +154,7 @@
         calc.productCode,
         calc.productName,
         calc.productNameEn,
+        calc.factoryNo,
         calc.skuCode,
         calc.temperatureZone,
         calc.productionDate,
@@ -202,6 +203,7 @@
             i.product_code AS productCode,
             i.product_name AS productName,
             i.product_name_en AS productNameEn,
+            pi.factory_no AS factoryNo,
             i.sku_code AS skuCode,
             i.temperature_zone AS temperatureZone,
             b.production_date AS productionDate,
@@ -297,6 +299,7 @@
             i.product_code AS productCode,
             i.product_name AS productName,
             i.product_name_en AS productNameEn,
+            pack.factory_no AS factoryNo,
             i.sku_code AS skuCode,
             i.temperature_zone AS temperatureZone,
             i.production_date AS productionDate,
@@ -316,6 +319,7 @@
           LEFT JOIN (
             SELECT
               i2.id AS inbound_item_id,
+              MIN(pi.factory_no) AS factory_no,
               SUM(COALESCE(pi.total_weight, 0)) AS total_weight
             FROM erp_inbound_order_item i2
             INNER JOIN erp_inbound_order io2 ON io2.id = i2.inbound_order_id
@@ -478,6 +482,7 @@
       pi.product_code AS productCode,
       pi.product_name AS productName,
       pi.product_name_en AS productNameEn,
+      pi.factory_no AS factoryNo,
       b.production_date AS productionDate,
       b.expiry_date AS expiryDate,
       COALESCE(b.box_count, 0) AS boxes,
