@@ -458,7 +458,7 @@ implements ErpSaleOrderService {
         }
         ErpSaleOutboundBatchEntity openBatch = this.findOpenOutboundBatch(saleOrderId);
         if (openBatch != null) {
-            throw new RuntimeException("存在未完成的出库批次，请先确认完成或作废后再新增");
+            throw new RuntimeException("存在未完成的出库批次，请先确认完成或删除后再新增");
         }
         Date now = new Date();
         ErpSaleOutboundBatchEntity batch = new ErpSaleOutboundBatchEntity();
@@ -483,7 +483,7 @@ implements ErpSaleOrderService {
         }
         ErpSaleOutboundBatchEntity batch = this.requireEditableOutboundBatch(saleOrderId, batchId);
         if (batch.getBankSlipFileId() != null) {
-            throw new RuntimeException("该批次已上传二批来款水单，如需调整请作废批次后重建");
+            throw new RuntimeException("该批次已上传二批来款水单，如需调整请删除批次后重建");
         }
         List<ErpSaleOrderFileEntity> savedFiles = this.doUploadFiles(saleOrderId, FILE_TYPE_OUTBOUND_BATCH_BANK, files, userId, false, batchId);
         ErpSaleOrderFileEntity latest = savedFiles == null || savedFiles.isEmpty() ? null : savedFiles.get(savedFiles.size() - 1);
@@ -526,15 +526,10 @@ implements ErpSaleOrderService {
         if (batch == null) {
             throw new RuntimeException("出库批次不存在");
         }
-        if (this.defaultInt(batch.getStatus()) == OUTBOUND_BATCH_VOID) {
-            return;
+        if (this.defaultInt(batch.getStatus()) == OUTBOUND_BATCH_CONFIRMED) {
+            throw new RuntimeException("出库批次已确认，不能删除");
         }
-        Date now = new Date();
-        batch.setStatus(OUTBOUND_BATCH_VOID);
-        batch.setVoidUserId(userId);
-        batch.setVoidTime(now);
-        batch.setUpdateTime(now);
-        this.erpSaleOutboundBatchDao.updateById(batch);
+        this.deleteOutboundBatchData(batch);
         this.refreshOutboundReceiptOrderConfirmed(batch.getSaleOrderId());
         this.refreshOrderStatus(batch.getSaleOrderId());
     }
@@ -1569,7 +1564,7 @@ implements ErpSaleOrderService {
         }
         int status = this.defaultInt(batch.getStatus());
         if (status == OUTBOUND_BATCH_CONFIRMED) {
-            throw new RuntimeException("出库批次已确认，如需调整请作废后重建");
+            throw new RuntimeException("出库批次已确认，如需调整请走后续冲正流程");
         }
         if (status == OUTBOUND_BATCH_VOID) {
             throw new RuntimeException("出库批次已作废，不能继续操作");
@@ -1624,6 +1619,25 @@ implements ErpSaleOrderService {
             this.fillOutboundBatchChildren(batch);
         }
         return batch;
+    }
+
+    private void deleteOutboundBatchData(ErpSaleOutboundBatchEntity batch) {
+        if (batch == null || batch.getId() == null) {
+            return;
+        }
+        Long batchId = batch.getId();
+        ErpSaleOutboundReceiptEntity receipt = this.loadOutboundReceiptByBatch(batchId);
+        if (receipt != null && receipt.getId() != null) {
+            this.erpSaleOutboundReceiptItemDao.delete((Wrapper)new QueryWrapper().eq((Object)"receipt_id", (Object)receipt.getId()));
+            this.erpSaleOutboundReceiptDao.deleteById(receipt.getId());
+        }
+        List<ErpSaleOrderFileEntity> files = this.erpSaleOrderFileDao.selectList((Wrapper)new QueryWrapper().eq((Object)"batch_id", (Object)batchId));
+        if (files != null) {
+            for (ErpSaleOrderFileEntity file : files) {
+                this.deleteFileRecord(file);
+            }
+        }
+        this.erpSaleOutboundBatchDao.deleteById(batchId);
     }
 
     private void fillOutboundBatchChildren(ErpSaleOutboundBatchEntity batch) {
