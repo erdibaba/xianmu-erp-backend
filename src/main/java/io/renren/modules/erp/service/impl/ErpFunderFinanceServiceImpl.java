@@ -692,6 +692,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
 
   private BigDecimal extractAmount(String rawText) {
     String text = StringUtils.defaultString(rawText);
+    BigDecimal normalSmallAmount = extractAmountNearLabel(text, "小写");
+    if (normalSmallAmount != null) {
+      return normalSmallAmount;
+    }
     BigDecimal ccbAmount = extractAmountNearLabel(text, "小写金额");
     if (ccbAmount != null) {
       return ccbAmount;
@@ -768,6 +772,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     if (StringUtils.contains(text, "兴业银行")) {
       return extractCibReceipt(text);
+    }
+    if (StringUtils.contains(text, "农业发展银行") || StringUtils.containsIgnoreCase(text, "AGRICULTURAL DEVELOPMENT BANK")) {
+      return extractAdbcReceipt(text);
     }
     return new HashMap<String, Object>();
   }
@@ -871,6 +878,22 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要"));
     BigDecimal amount = extractAmountNearLabel(text, "写");
     receipt.put("recognizedAmount", amount == null ? extractAmount(text) : amount);
+    receipt.put("paymentDate", extractDate(text));
+    return receipt;
+  }
+
+  private Map<String, Object> extractAdbcReceipt(String rawText) {
+    Map<String, Object> receipt = new HashMap<String, Object>();
+    String text = StringUtils.defaultString(rawText);
+    receipt.put("voucherTemplate", "中国农业发展银行客户专用回单");
+    List<String> lines = nonBlankLines(text);
+    receipt.put("transactionNo", firstValueAfterAnyMarker(lines, "核心流水号", "交易流水号"));
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "户名"), "payerName", "payeeName");
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, false, "账号"), "payerAccount", "payeeAccount");
+    putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "开户行"), "payerBank", "payeeBank");
+    receipt.put("purpose", firstValueAfterAnyMarker(lines, "用途", "附言"));
+    receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要", "备注"));
+    receipt.put("recognizedAmount", extractAmount(text));
     receipt.put("paymentDate", extractDate(text));
     return receipt;
   }

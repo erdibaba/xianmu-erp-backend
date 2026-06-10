@@ -67,11 +67,14 @@ import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
+import io.renren.modules.erp.service.ErpOcrService;
 import io.renren.modules.erp.service.ErpWecomService;
+import io.renren.modules.erp.vo.ErpRecognizeResultVo;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
 import io.renren.modules.sys.entity.SysUserEntity;
 import io.renren.modules.sys.service.SysUserService;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -100,6 +103,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
@@ -178,6 +182,8 @@ implements ErpSaleOrderService {
     private ErpWecomService erpWecomService;
     @Autowired
     private ErpSaleUploadNoticeDao erpSaleUploadNoticeDao;
+    @Autowired
+    private ErpOcrService erpOcrService;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -506,19 +512,42 @@ implements ErpSaleOrderService {
         if (files == null || files.length != 1) {
             throw new RuntimeException("每个出库批次只能上传一张二批来款水单");
         }
+        byte[] fileBytes = files[0].getBytes();
+        MultipartFile archiveFile = new ByteArrayMultipartFile(files[0], fileBytes);
+        MultipartFile ocrFile = new ByteArrayMultipartFile(files[0], fileBytes);
         ErpSaleOutboundBatchEntity batch = this.requireEditableOutboundBatch(saleOrderId, batchId);
         if (batch.getBankSlipFileId() != null) {
             throw new RuntimeException("该批次已上传二批来款水单，如需调整请删除批次后重建");
         }
-        List<ErpSaleOrderFileEntity> savedFiles = this.doUploadFiles(saleOrderId, FILE_TYPE_OUTBOUND_BATCH_BANK, files, userId, false, batchId);
+        this.fillOutboundBatchBankSlipRecognition(batch, ocrFile);
+        List<ErpSaleOrderFileEntity> savedFiles = this.doUploadFiles(saleOrderId, FILE_TYPE_OUTBOUND_BATCH_BANK, new MultipartFile[]{archiveFile}, userId, false, batchId);
         ErpSaleOrderFileEntity latest = savedFiles == null || savedFiles.isEmpty() ? null : savedFiles.get(savedFiles.size() - 1);
         if (latest == null) {
             throw new RuntimeException("二批来款水单上传失败");
         }
         batch.setBankSlipFileId(latest.getId());
+        this.refreshOutboundBatchBankAmountDiff(batch);
         batch.setUpdateTime(new Date());
         this.erpSaleOutboundBatchDao.updateById(batch);
         return this.refreshOutboundBatchStatus(batchId);
+    }
+
+    @Override
+    @Transactional(rollbackFor={Exception.class})
+    public ErpSaleOutboundBatchEntity saveOutboundBatchBankSlip(ErpSaleOutboundBatchEntity request, Long userId) {
+        ErpSaleOutboundBatchEntity batch = this.requireEditableOutboundBatch(request == null ? null : request.getSaleOrderId(), request == null ? null : request.getId());
+        if (batch.getBankSlipFileId() == null) {
+            throw new RuntimeException("请先上传二批来款水单");
+        }
+        batch.setBankPayerNameModified(StringUtils.trimToNull(request.getBankPayerNameModified()));
+        batch.setBankPayeeNameModified(StringUtils.trimToNull(request.getBankPayeeNameModified()));
+        batch.setBankAmountModified(this.defaultDecimal(request.getBankAmountModified()).setScale(2, RoundingMode.HALF_UP));
+        batch.setBankPaymentDateModified(request.getBankPaymentDateModified());
+        batch.setBankSerialNoModified(StringUtils.trimToNull(request.getBankSerialNoModified()));
+        this.refreshOutboundBatchBankAmountDiff(batch);
+        batch.setUpdateTime(new Date());
+        this.erpSaleOutboundBatchDao.updateById(batch);
+        return this.loadOutboundBatch(batch.getId());
     }
 
     @Override
@@ -693,6 +722,7 @@ implements ErpSaleOrderService {
             ErpSaleOutboundBatchEntity batch = (ErpSaleOutboundBatchEntity)this.erpSaleOutboundBatchDao.selectById(file.getBatchId());
             if (batch != null && file.getId() != null && file.getId().equals(batch.getBankSlipFileId())) {
                 batch.setBankSlipFileId(null);
+                this.clearOutboundBatchBankSlip(batch);
                 batch.setUpdateTime(new Date());
                 this.erpSaleOutboundBatchDao.updateById(batch);
             }
@@ -1697,6 +1727,220 @@ implements ErpSaleOrderService {
         return "CK-" + saleOrderId + "-" + String.format("%02d", next);
     }
 
+    private void fillOutboundBatchBankSlipRecognition(ErpSaleOutboundBatchEntity batch, MultipartFile file) throws Exception {
+        ErpRecognizeResultVo result = this.erpOcrService.recognize(file, "bank_payment_voucher");
+        String rawText = result == null ? "" : StringUtils.defaultString(result.getRawText());
+        Map<String, Object> receipt = this.extractOutboundBankReceipt(rawText);
+        String payerName = this.stringValue(receipt.get("payerName"));
+        String payeeName = this.stringValue(receipt.get("payeeName"));
+        String serialNo = this.stringValue(receipt.get("serialNo"));
+        BigDecimal amount = receipt.get("amount") instanceof BigDecimal ? (BigDecimal)receipt.get("amount") : this.extractOutboundBankAmount(rawText);
+        Date paymentDate = receipt.get("paymentDate") instanceof Date ? (Date)receipt.get("paymentDate") : this.extractOutboundBankDate(rawText);
+        batch.setBankVoucherTemplate(this.firstNonBlank(this.stringValue(receipt.get("voucherTemplate")), "银行电子回单"));
+        batch.setBankPayerNameRecognized(payerName);
+        batch.setBankPayeeNameRecognized(payeeName);
+        batch.setBankAmountRecognized(this.defaultDecimal(amount).setScale(2, RoundingMode.HALF_UP));
+        batch.setBankPaymentDateRecognized(paymentDate);
+        batch.setBankSerialNoRecognized(serialNo);
+        batch.setBankPayerNameModified(payerName);
+        batch.setBankPayeeNameModified(payeeName);
+        batch.setBankAmountModified(this.defaultDecimal(amount).setScale(2, RoundingMode.HALF_UP));
+        batch.setBankPaymentDateModified(paymentDate);
+        batch.setBankSerialNoModified(serialNo);
+        batch.setBankReceiptRawText(rawText);
+    }
+
+    private Map<String, Object> extractOutboundBankReceipt(String rawText) {
+        Map<String, Object> receipt = new HashMap<String, Object>();
+        String text = StringUtils.defaultString(rawText);
+        if (StringUtils.contains(text, "农业发展银行") || StringUtils.containsIgnoreCase(text, "AGRICULTURAL DEVELOPMENT BANK")) {
+            receipt.put("voucherTemplate", "中国农业发展银行客户专用回单");
+            receipt.put("serialNo", this.extractValueAfterRegex(text, "(?:核心流水号|交易流水号)\\s*[:：]?\\s*([A-Za-z0-9\\-]+)"));
+            receipt.put("payerName", this.extractBankPartyName(text, "付款人", "收款人"));
+            receipt.put("payeeName", this.extractBankPartyName(text, "收款人", "交易渠道"));
+            receipt.put("amount", this.extractOutboundBankAmount(text));
+            receipt.put("paymentDate", this.extractOutboundBankDate(text));
+            return receipt;
+        }
+        receipt.put("voucherTemplate", "银行电子回单");
+        receipt.put("serialNo", this.extractValueAfterRegex(text, "(?:核心流水号|交易流水号|唯一流水编号|电子回单编号|电子回单号码|凭证号)\\s*[:：]?\\s*([A-Za-z0-9\\-]+)"));
+        receipt.put("payerName", this.extractGenericBankPartyName(text, "付款"));
+        receipt.put("payeeName", this.extractGenericBankPartyName(text, "收款"));
+        receipt.put("amount", this.extractOutboundBankAmount(text));
+        receipt.put("paymentDate", this.extractOutboundBankDate(text));
+        return receipt;
+    }
+
+    private String extractBankPartyName(String rawText, String startMarker, String endMarker) {
+        String text = StringUtils.defaultString(rawText);
+        int start = text.indexOf(startMarker);
+        if (start < 0) {
+            return null;
+        }
+        int end = StringUtils.isBlank(endMarker) ? -1 : text.indexOf(endMarker, start + startMarker.length());
+        String block = end > start ? text.substring(start, end) : text.substring(start);
+        String name = this.extractValueAfterRegex(block, "(?:户名|账户名称|全称)\\s*[:：]?\\s*([^\\r\\n]+)");
+        if (StringUtils.isBlank(name)) {
+            List<String> names = this.extractValuesAfterMarker(this.bankNonBlankLines(rawText), "户名", 2);
+            if ("付款人".equals(startMarker) && !names.isEmpty()) {
+                name = names.get(0);
+            } else if ("收款人".equals(startMarker) && names.size() > 1) {
+                name = names.get(1);
+            }
+        }
+        return this.cleanBankTextValue(name);
+    }
+
+    private String extractGenericBankPartyName(String rawText, String partyMarker) {
+        String name = this.extractValueAfterRegex(rawText, partyMarker + "[^\\r\\n]{0,8}(?:户名|账户名称|全称)\\s*[:：]?\\s*([^\\r\\n]+)");
+        if (StringUtils.isNotBlank(name)) {
+            return this.cleanBankTextValue(name);
+        }
+        List<String> names = this.extractValuesAfterMarker(this.bankNonBlankLines(rawText), "户名", 2);
+        if ("付款".equals(partyMarker) && !names.isEmpty()) {
+            return this.cleanBankTextValue(names.get(0));
+        }
+        if ("收款".equals(partyMarker) && names.size() > 1) {
+            return this.cleanBankTextValue(names.get(1));
+        }
+        return null;
+    }
+
+    private BigDecimal extractOutboundBankAmount(String rawText) {
+        String text = StringUtils.defaultString(rawText);
+        BigDecimal amount = this.extractOutboundAmountNearLabel(text, "小写");
+        if (amount != null) {
+            return amount;
+        }
+        amount = this.extractOutboundAmountNearLabel(text, "金额");
+        if (amount != null) {
+            return amount;
+        }
+        Matcher matcher = Pattern.compile("(?:￥|¥)?\\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})|[0-9]+\\.[0-9]{1,2})\\s*(?:元)?").matcher(text);
+        BigDecimal result = BigDecimal.ZERO;
+        while (matcher.find()) {
+            result = this.parseDecimal(matcher.group(1)).setScale(2, RoundingMode.HALF_UP);
+        }
+        return result;
+    }
+
+    private BigDecimal extractOutboundAmountNearLabel(String rawText, String label) {
+        int index = StringUtils.indexOf(rawText, label);
+        if (index < 0) {
+            return null;
+        }
+        String nearby = StringUtils.substring(rawText, index, Math.min(rawText.length(), index + 160));
+        Matcher matcher = Pattern.compile("([0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]{1,2})|[0-9]+\\.[0-9]{1,2})").matcher(nearby);
+        if (!matcher.find()) {
+            return null;
+        }
+        return this.parseDecimal(matcher.group(1)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private Date extractOutboundBankDate(String rawText) {
+        String text = StringUtils.defaultString(rawText);
+        String compact = this.extractValueAfterRegex(text, "(?:交易日期|日期|打印日期)\\s*[:：]?\\s*(20\\d{6})");
+        if (StringUtils.isNotBlank(compact)) {
+            return this.parseDateTime(compact.substring(0, 4) + "-" + compact.substring(4, 6) + "-" + compact.substring(6, 8));
+        }
+        Matcher matcher = Pattern.compile("(20\\d{2})[年\\-/\\.](\\d{1,2})[月\\-/\\.](\\d{1,2})").matcher(text);
+        if (matcher.find()) {
+            return this.parseDateTime(matcher.group(1) + "-" + matcher.group(2) + "-" + matcher.group(3));
+        }
+        return null;
+    }
+
+    private void refreshOutboundBatchBankAmountDiff(ErpSaleOutboundBatchEntity batch) {
+        if (batch == null || batch.getId() == null) {
+            return;
+        }
+        BigDecimal expectedAmount = this.calcOutboundBatchReceivableAmount(batch.getId());
+        BigDecimal modifiedAmount = batch.getBankAmountModified() == null ? batch.getBankAmountRecognized() : batch.getBankAmountModified();
+        batch.setBankExpectedAmount(expectedAmount.setScale(2, RoundingMode.HALF_UP));
+        batch.setBankAmountDiff(this.defaultDecimal(modifiedAmount).subtract(expectedAmount).setScale(2, RoundingMode.HALF_UP));
+    }
+
+    private void clearOutboundBatchBankSlip(ErpSaleOutboundBatchEntity batch) {
+        if (batch == null) {
+            return;
+        }
+        batch.setBankVoucherTemplate(null);
+        batch.setBankPayerNameRecognized(null);
+        batch.setBankPayerNameModified(null);
+        batch.setBankPayeeNameRecognized(null);
+        batch.setBankPayeeNameModified(null);
+        batch.setBankAmountRecognized(null);
+        batch.setBankAmountModified(null);
+        batch.setBankPaymentDateRecognized(null);
+        batch.setBankPaymentDateModified(null);
+        batch.setBankSerialNoRecognized(null);
+        batch.setBankSerialNoModified(null);
+        batch.setBankExpectedAmount(null);
+        batch.setBankAmountDiff(null);
+        batch.setBankReceiptRawText(null);
+    }
+
+    private BigDecimal calcOutboundBatchReceivableAmount(Long batchId) {
+        ErpSaleOutboundReceiptEntity receipt = this.loadOutboundReceiptByBatch(batchId);
+        if (receipt == null || receipt.getItemList() == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (ErpSaleOutboundReceiptItemEntity item : receipt.getItemList()) {
+            if (item == null) {
+                continue;
+            }
+            total = total.add(this.defaultDecimal(item.getTotalWeight()).multiply(this.defaultDecimal(item.getSalePriceKg())));
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String extractValueAfterRegex(String rawText, String regex) {
+        Matcher matcher = Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(StringUtils.defaultString(rawText));
+        return matcher.find() ? this.cleanBankTextValue(matcher.group(1)) : null;
+    }
+
+    private List<String> bankNonBlankLines(String rawText) {
+        List<String> lines = new ArrayList<String>();
+        for (String line : StringUtils.split(StringUtils.defaultString(rawText), '\n')) {
+            String value = StringUtils.trimToEmpty(line);
+            if (StringUtils.isNotBlank(value)) {
+                lines.add(value);
+            }
+        }
+        return lines;
+    }
+
+    private List<String> extractValuesAfterMarker(List<String> lines, String marker, int maxCount) {
+        List<String> values = new ArrayList<String>();
+        for (int index = 0; index < lines.size() && values.size() < maxCount; index++) {
+            String line = lines.get(index);
+            if (!StringUtils.contains(line, marker)) {
+                continue;
+            }
+            String inlineValue = this.cleanBankTextValue(StringUtils.substringAfter(line, marker));
+            if (StringUtils.isNotBlank(inlineValue)) {
+                values.add(inlineValue);
+            }
+            for (int offset = 1; offset <= 4 && index + offset < lines.size() && values.size() < maxCount; offset++) {
+                String candidate = this.cleanBankTextValue(lines.get(index + offset));
+                if (StringUtils.isNotBlank(candidate) && !candidate.matches("^\\d{6,}$")) {
+                    values.add(candidate);
+                }
+            }
+        }
+        return values;
+    }
+
+    private String cleanBankTextValue(String value) {
+        if (StringUtils.isBlank(value)) {
+            return null;
+        }
+        String result = StringUtils.trimToEmpty(value).replaceAll("^[：:：\\s]+", "").trim();
+        result = result.replaceAll("\\s{2,}.*$", "").trim();
+        return StringUtils.isBlank(result) ? null : result;
+    }
+
     private ErpSaleOutboundBatchEntity refreshOutboundBatchStatus(Long batchId) {
         ErpSaleOutboundBatchEntity batch = (ErpSaleOutboundBatchEntity)this.erpSaleOutboundBatchDao.selectById(batchId);
         if (batch == null) {
@@ -1714,6 +1958,7 @@ implements ErpSaleOrderService {
         batch.setShippedTotalBoxes(shippedBoxes);
         batch.setShippedTotalWeight(shippedWeight);
         batch.setStatus(status);
+        this.refreshOutboundBatchBankAmountDiff(batch);
         batch.setUpdateTime(new Date());
         this.erpSaleOutboundBatchDao.updateById(batch);
         return this.loadOutboundBatch(batchId);
@@ -2851,6 +3096,60 @@ implements ErpSaleOrderService {
             return "-";
         }
         return new SimpleDateFormat("yyyy-MM-dd").format(date);
+    }
+
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final String name;
+        private final String originalFilename;
+        private final String contentType;
+        private final byte[] content;
+
+        private ByteArrayMultipartFile(MultipartFile source, byte[] content) {
+            this.name = source == null ? "file" : source.getName();
+            this.originalFilename = source == null ? null : source.getOriginalFilename();
+            this.contentType = source == null ? null : source.getContentType();
+            this.content = content == null ? new byte[0] : content;
+        }
+
+        @Override
+        public String getName() {
+            return this.name;
+        }
+
+        @Override
+        public String getOriginalFilename() {
+            return this.originalFilename;
+        }
+
+        @Override
+        public String getContentType() {
+            return this.contentType;
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return this.content.length == 0;
+        }
+
+        @Override
+        public long getSize() {
+            return this.content.length;
+        }
+
+        @Override
+        public byte[] getBytes() {
+            return this.content;
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new ByteArrayInputStream(this.content);
+        }
+
+        @Override
+        public void transferTo(File dest) throws IOException {
+            Files.write(dest.toPath(), this.content);
+        }
     }
 
     private static class StockCandidate {

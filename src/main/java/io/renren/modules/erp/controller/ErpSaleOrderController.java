@@ -4,6 +4,7 @@ import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.R;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
@@ -206,6 +207,19 @@ public class ErpSaleOrderController extends AbstractController {
     }
     try {
       return R.ok().put("batch", erpSaleOrderService.uploadOutboundBatchBankSlip(saleOrderId, batchId, files, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @PostMapping("/outbound/batch/bank-slip/save")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R saveOutboundBatchBankSlip(@RequestBody ErpSaleOutboundBatchEntity batch) {
+    if (batch == null || batch.getId() == null || batch.getId() <= 0) {
+      return R.error("请选择出库批次");
+    }
+    try {
+      return R.ok().put("batch", erpSaleOrderService.saveOutboundBatchBankSlip(batch, getUserId()));
     } catch (RuntimeException e) {
       return R.error(e.getMessage());
     }
