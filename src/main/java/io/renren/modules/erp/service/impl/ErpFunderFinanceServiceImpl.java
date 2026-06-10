@@ -888,6 +888,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     receipt.put("voucherTemplate", "中国农业发展银行客户专用回单");
     List<String> lines = nonBlankLines(text);
     receipt.put("transactionNo", firstValueAfterAnyMarker(lines, "核心流水号", "交易流水号"));
+    putPartyValues(receipt, companyNamesBeforeMarker(lines, "户名", 2), "payerName", "payeeName");
     putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "户名"), "payerName", "payeeName");
     putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, false, "账号"), "payerAccount", "payeeAccount");
     putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "开户行"), "payerBank", "payeeBank");
@@ -896,6 +897,31 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     receipt.put("recognizedAmount", extractAmount(text));
     receipt.put("paymentDate", extractDate(text));
     return receipt;
+  }
+
+  private List<String> companyNamesBeforeMarker(List<String> lines, String marker, int maxCount) {
+    List<String> values = new ArrayList<String>();
+    int markerIndex = -1;
+    for (int i = 0; i < lines.size(); i++) {
+      if (StringUtils.contains(lines.get(i), marker)) {
+        markerIndex = i;
+        break;
+      }
+    }
+    if (markerIndex <= 0) {
+      return values;
+    }
+    for (int i = markerIndex - 1; i >= 0 && values.size() < maxCount; i--) {
+      String candidate = StringUtils.trimToEmpty(lines.get(i));
+      if (StringUtils.isBlank(candidate) || !StringUtils.contains(candidate, "公司")) {
+        continue;
+      }
+      values.add(0, candidate);
+    }
+    while (values.size() > maxCount) {
+      values.remove(0);
+    }
+    return values;
   }
 
   private List<String> nonBlankLines(String rawText) {

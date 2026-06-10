@@ -1756,8 +1756,7 @@ implements ErpSaleOrderService {
         if (StringUtils.contains(text, "农业发展银行") || StringUtils.containsIgnoreCase(text, "AGRICULTURAL DEVELOPMENT BANK")) {
             receipt.put("voucherTemplate", "中国农业发展银行客户专用回单");
             receipt.put("serialNo", this.extractValueAfterRegex(text, "(?:核心流水号|交易流水号)\\s*[:：]?\\s*([A-Za-z0-9\\-]+)"));
-            receipt.put("payerName", this.extractBankPartyName(text, "付款人", "收款人"));
-            receipt.put("payeeName", this.extractBankPartyName(text, "收款人", "交易渠道"));
+            this.fillAdbcPartyNames(receipt, text);
             receipt.put("amount", this.extractOutboundBankAmount(text));
             receipt.put("paymentDate", this.extractOutboundBankDate(text));
             return receipt;
@@ -1789,6 +1788,47 @@ implements ErpSaleOrderService {
             }
         }
         return this.cleanBankTextValue(name);
+    }
+
+    private void fillAdbcPartyNames(Map<String, Object> receipt, String rawText) {
+        List<String> companyNames = this.extractCompanyNamesBeforeMarker(this.bankNonBlankLines(rawText), "户名", 2);
+        if (!companyNames.isEmpty()) {
+            receipt.put("payerName", companyNames.get(0));
+        }
+        if (companyNames.size() > 1) {
+            receipt.put("payeeName", companyNames.get(1));
+        }
+        if (receipt.get("payerName") == null) {
+            receipt.put("payerName", this.extractBankPartyName(rawText, "付款人", "收款人"));
+        }
+        if (receipt.get("payeeName") == null) {
+            receipt.put("payeeName", this.extractBankPartyName(rawText, "收款人", "交易渠道"));
+        }
+    }
+
+    private List<String> extractCompanyNamesBeforeMarker(List<String> lines, String marker, int maxCount) {
+        List<String> values = new ArrayList<String>();
+        int markerIndex = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            if (StringUtils.contains(lines.get(i), marker)) {
+                markerIndex = i;
+                break;
+            }
+        }
+        if (markerIndex <= 0) {
+            return values;
+        }
+        for (int i = markerIndex - 1; i >= 0 && values.size() < maxCount; i--) {
+            String candidate = this.cleanBankTextValue(lines.get(i));
+            if (StringUtils.isBlank(candidate) || !StringUtils.contains(candidate, "公司")) {
+                continue;
+            }
+            values.add(0, candidate);
+        }
+        while (values.size() > maxCount) {
+            values.remove(0);
+        }
+        return values;
     }
 
     private String extractGenericBankPartyName(String rawText, String partyMarker) {
