@@ -459,12 +459,19 @@ def add_days(date_text, days):
 
 
 def extract_factory_no_from_text(text):
-    m = re.search(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\b\s+\1\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}", text or "")
+    text = text or ""
+    m = re.search(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\b\s+\1\s+\d{1,2}\s+[A-Za-z]+\s+\d{4}", text)
+    if m:
+        return m.group(1)
+    m = re.search(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\s*,\s*Silver\s*Fern\s*Farms", text, re.I)
     return m.group(1) if m else None
 
 
 def extract_factory_no_from_product_section(section):
     section = section or ""
+    m = re.search(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\s*,\s*Silver\s*Fern\s*Farms", section, re.I)
+    if m:
+        return m.group(1)
     markers = [
         "registered processing",
         "registered slaughterhouses",
@@ -481,7 +488,7 @@ def extract_factory_no_from_product_section(section):
 
 
 def extract_packing_factory_numbers(text):
-    matches = list(re.finditer(r"Product Item\s+\d+\b", text or "", re.I))
+    matches = list(re.finditer(r"Product\s*Item\s*\d+\b", text or "", re.I))
     factory_numbers = []
     for index, match in enumerate(matches):
         start = match.start()
