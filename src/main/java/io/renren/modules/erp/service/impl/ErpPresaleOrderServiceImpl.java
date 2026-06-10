@@ -306,6 +306,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   private void normalizeOrder(ErpPresaleOrderEntity order, Long userId, Date now, boolean create) {
+    validateEstimateOrderRequired(order);
     if (StringUtils.isBlank(order.getOrderNo())) {
       order.setOrderNo("PS" + new SimpleDateFormat("yyyyMMddHHmmss").format(now));
     }
@@ -328,6 +329,32 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       order.setCreateTime(now);
     }
     order.setUpdateTime(now);
+  }
+
+  private void validateEstimateOrderRequired(ErpPresaleOrderEntity order) {
+    if (order.getBrandId() == null) {
+      throw new RuntimeException("请选择预售销售单品牌方");
+    }
+    if (StringUtils.isBlank(order.getSellerContractNo())) {
+      throw new RuntimeException("预售销售单合同号不能为空");
+    }
+    if (order.getCustomerPartnerId() == null) {
+      throw new RuntimeException("请选择预售销售单采购方");
+    }
+    if (order.getOrderDate() == null) {
+      throw new RuntimeException("预售销售单下单日期不能为空");
+    }
+    List<ErpPresaleOrderItemEntity> items = order.getItemList() == null ? new ArrayList<ErpPresaleOrderItemEntity>() : order.getItemList();
+    if (items.isEmpty()) {
+      throw new RuntimeException("预售销售单明细至少需要一行");
+    }
+    int lineNo = 1;
+    for (ErpPresaleOrderItemEntity item : items) {
+      if (item == null || StringUtils.isBlank(firstNonBlank(item.getProductCode(), item.getSourceProductCode()))) {
+        throw new RuntimeException("预售销售单第" + lineNo + "行产品代码不能为空");
+      }
+      lineNo++;
+    }
   }
 
   private void saveItems(ErpPresaleOrderEntity order, Date now) {
