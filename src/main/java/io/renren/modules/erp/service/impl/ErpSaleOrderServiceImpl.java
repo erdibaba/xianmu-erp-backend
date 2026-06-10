@@ -517,7 +517,12 @@ implements ErpSaleOrderService {
         MultipartFile ocrFile = new ByteArrayMultipartFile(files[0], fileBytes);
         ErpSaleOutboundBatchEntity batch = this.requireEditableOutboundBatch(saleOrderId, batchId);
         if (batch.getBankSlipFileId() != null) {
-            throw new RuntimeException("该批次已上传二批来款水单，如需调整请删除批次后重建");
+            ErpSaleOrderFileEntity oldFile = (ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(batch.getBankSlipFileId());
+            if (oldFile != null) {
+                this.deleteFileRecord(oldFile);
+            }
+            batch.setBankSlipFileId(null);
+            this.clearOutboundBatchBankSlip(batch);
         }
         this.fillOutboundBatchBankSlipRecognition(batch, ocrFile);
         List<ErpSaleOrderFileEntity> savedFiles = this.doUploadFiles(saleOrderId, FILE_TYPE_OUTBOUND_BATCH_BANK, new MultipartFile[]{archiveFile}, userId, false, batchId);
