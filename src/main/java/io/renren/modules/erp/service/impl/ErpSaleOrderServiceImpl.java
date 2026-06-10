@@ -33,6 +33,8 @@ import io.renren.modules.erp.dao.ErpInboundOrderItemDao;
 import io.renren.modules.erp.dao.ErpPartnerDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderItemDao;
+import io.renren.modules.erp.dao.ErpPresalePackingDao;
+import io.renren.modules.erp.dao.ErpPresalePackingItemDao;
 import io.renren.modules.erp.dao.ErpProductDao;
 import io.renren.modules.erp.dao.ErpSaleOrderDao;
 import io.renren.modules.erp.dao.ErpSaleOrderFileDao;
@@ -50,6 +52,8 @@ import io.renren.modules.erp.entity.ErpInboundOrderItemEntity;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpPresalePackingEntity;
+import io.renren.modules.erp.entity.ErpPresalePackingItemEntity;
 import io.renren.modules.erp.entity.ErpProductEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderFileEntity;
@@ -158,6 +162,10 @@ implements ErpSaleOrderService {
     private ErpPresaleOrderDao erpPresaleOrderDao;
     @Autowired
     private ErpPresaleOrderItemDao erpPresaleOrderItemDao;
+    @Autowired
+    private ErpPresalePackingDao erpPresalePackingDao;
+    @Autowired
+    private ErpPresalePackingItemDao erpPresalePackingItemDao;
     @Autowired
     private ErpInboundOrderDao erpInboundOrderDao;
     @Autowired
@@ -1176,11 +1184,16 @@ implements ErpSaleOrderService {
                 allocated.setExpiryDate(candidate.inboundItem.getExpiryDate());
                 allocated.setSpecWeight(candidate.inboundItem.getSpecWeight());
                 allocated.setSalePriceKg(requestItem.getSalePriceKg().setScale(2, RoundingMode.HALF_UP));
+                String defaultFactoryNo = this.findFactoryNoForInboundItem(candidate.inboundOrder, candidate.inboundItem);
+                String defaultPortCold = StringUtils.trimToEmpty((String)candidate.inboundOrder.getWarehouseName());
                 ErpSaleOrderItemEntity inputAllocation = (ErpSaleOrderItemEntity)inputAllocationMap.get(candidate.inboundItem.getId());
                 if (inputAllocation != null) {
                     allocated.setContractQuantityKg(inputAllocation.getContractQuantityKg());
-                    allocated.setContractFactoryNo(StringUtils.trimToEmpty((String)inputAllocation.getContractFactoryNo()));
-                    allocated.setContractPortCold(StringUtils.trimToEmpty((String)inputAllocation.getContractPortCold()));
+                    allocated.setContractFactoryNo(this.firstNonBlank(inputAllocation.getContractFactoryNo(), defaultFactoryNo));
+                    allocated.setContractPortCold(this.firstNonBlank(inputAllocation.getContractPortCold(), defaultPortCold));
+                } else {
+                    allocated.setContractFactoryNo(defaultFactoryNo);
+                    allocated.setContractPortCold(defaultPortCold);
                 }
                 allocated.setRemark(requestItem.getRemark());
                 result.add(allocated);
@@ -1205,6 +1218,35 @@ implements ErpSaleOrderService {
             }
         }
         return result;
+    }
+
+    private String findFactoryNoForInboundItem(ErpInboundOrderEntity inboundOrder, ErpInboundOrderItemEntity inboundItem) {
+        if (inboundOrder == null || inboundItem == null || inboundOrder.getPresaleOrderId() == null || inboundItem.getProductId() == null) {
+            return "";
+        }
+        QueryWrapper<ErpPresalePackingEntity> packingWrapper = new QueryWrapper<ErpPresalePackingEntity>()
+            .eq("presale_order_id", inboundOrder.getPresaleOrderId())
+            .orderByDesc("id");
+        List<ErpPresalePackingEntity> packingList = this.erpPresalePackingDao.selectList((Wrapper)packingWrapper);
+        if (packingList == null || packingList.isEmpty()) {
+            return "";
+        }
+        String containerNo = StringUtils.trimToEmpty((String)inboundOrder.getContainerNo());
+        for (ErpPresalePackingEntity packing : packingList) {
+            if (packing == null) continue;
+            String packingContainerNo = StringUtils.trimToEmpty((String)packing.getContainerNo());
+            if (StringUtils.isNotBlank((String)containerNo) && StringUtils.isNotBlank((String)packingContainerNo) && !containerNo.equalsIgnoreCase(packingContainerNo)) {
+                continue;
+            }
+            ErpPresalePackingItemEntity packingItem = this.erpPresalePackingItemDao.selectOne((Wrapper)new QueryWrapper<ErpPresalePackingItemEntity>()
+                .eq("packing_id", packing.getId())
+                .eq("product_id", inboundItem.getProductId())
+                .last("limit 1"));
+            if (packingItem != null && StringUtils.isNotBlank((String)packingItem.getFactoryNo())) {
+                return StringUtils.trimToEmpty((String)packingItem.getFactoryNo());
+            }
+        }
+        return "";
     }
 
     private Map<Long, List<StockCandidate>> loadSpotStockMap(Long warehouseId, Long excludeOrderId) {
