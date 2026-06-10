@@ -17,26 +17,31 @@ public interface ErpInventoryDao {
   List<ErpSpotInventoryVo> querySpot(@Param("keyword") String keyword,
                                      @Param("warehouseName") String warehouseName,
                                      @Param("containerNo") String containerNo,
+                                     @Param("factoryNo") String factoryNo,
                                      @Param("onlyAvailable") Integer onlyAvailable);
 
   List<ErpFuturesInventoryVo> queryFutures(@Param("keyword") String keyword,
                                            @Param("contractNo") String contractNo,
                                            @Param("containerNo") String containerNo,
+                                           @Param("factoryNo") String factoryNo,
                                            @Param("onlyAvailable") Integer onlyAvailable);
 
   List<ErpInventoryBatchVo> querySpotBatches(@Param("productId") Long productId,
                                              @Param("warehouseName") String warehouseName,
                                              @Param("containerNo") String containerNo,
+                                             @Param("factoryNo") String factoryNo,
                                              @Param("onlyAvailable") Integer onlyAvailable);
 
   List<ErpInventoryBatchVo> queryFuturesBatches(@Param("productId") Long productId,
                                                 @Param("contractNo") String contractNo,
                                                 @Param("containerNo") String containerNo,
+                                                @Param("factoryNo") String factoryNo,
                                                 @Param("onlyAvailable") Integer onlyAvailable);
 
   List<ErpInventoryRecordVo> queryRecords(@Param("keyword") String keyword,
                                           @Param("recordType") String recordType,
                                           @Param("contractNo") String contractNo,
                                           @Param("warehouseName") String warehouseName,
-                                          @Param("containerNo") String containerNo);
+                                          @Param("containerNo") String containerNo,
+                                          @Param("factoryNo") String factoryNo);
 }

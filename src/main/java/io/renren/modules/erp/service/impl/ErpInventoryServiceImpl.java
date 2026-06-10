@@ -29,8 +29,9 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     String keyword = getString(params, "keyword");
     String warehouseName = getString(params, "warehouseName");
     String containerNo = getString(params, "containerNo");
+    String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.querySpot(keyword, warehouseName, containerNo, onlyAvailable);
+    return erpInventoryDao.querySpot(keyword, warehouseName, containerNo, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -38,8 +39,9 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     String keyword = getString(params, "keyword");
     String contractNo = getString(params, "contractNo");
     String containerNo = getString(params, "containerNo");
+    String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.queryFutures(keyword, contractNo, containerNo, onlyAvailable);
+    return erpInventoryDao.queryFutures(keyword, contractNo, containerNo, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -50,8 +52,9 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     }
     String warehouseName = getString(params, "warehouseName");
     String containerNo = getString(params, "containerNo");
+    String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.querySpotBatches(productId, warehouseName, containerNo, onlyAvailable);
+    return erpInventoryDao.querySpotBatches(productId, warehouseName, containerNo, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -62,8 +65,9 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     }
     String contractNo = getString(params, "contractNo");
     String containerNo = getString(params, "containerNo");
+    String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.queryFuturesBatches(productId, contractNo, containerNo, onlyAvailable);
+    return erpInventoryDao.queryFuturesBatches(productId, contractNo, containerNo, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -73,7 +77,8 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     String contractNo = getString(params, "contractNo");
     String warehouseName = getString(params, "warehouseName");
     String containerNo = getString(params, "containerNo");
-    return erpInventoryDao.queryRecords(keyword, recordType, contractNo, warehouseName, containerNo);
+    String factoryNo = getString(params, "factoryNo");
+    return erpInventoryDao.queryRecords(keyword, recordType, contractNo, warehouseName, containerNo, factoryNo);
   }
 
   private String getString(Map<String, Object> params, String key) {

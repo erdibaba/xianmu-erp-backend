@@ -17,6 +17,7 @@ public class ErpInventoryRecordVo implements Serializable {
   private String customerName;
   private String warehouseName;
   private String containerNo;
+  private String factoryNo;
   private Long productId;
   private String productCode;
   private String productName;

@@ -105,6 +105,9 @@
         AND (pp.container_no = io2.container_no OR pp.container_no IS NULL OR io2.container_no IS NULL)
       INNER JOIN erp_presale_packing_item pi ON pi.packing_id = pp.id AND pi.product_id = i2.product_id
       WHERE i2.product_id IS NOT NULL
+      <if test="factoryNo != null and factoryNo != ''">
+        AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
+      </if>
       GROUP BY i2.id
     ) pack ON pack.inbound_item_id = i.id
     LEFT JOIN (
@@ -129,6 +132,17 @@
     </if>
     <if test="containerNo != null and containerNo != ''">
       AND io.container_no LIKE CONCAT('%', #{containerNo}, '%')
+    </if>
+    <if test="factoryNo != null and factoryNo != ''">
+      AND EXISTS (
+        SELECT 1
+        FROM erp_presale_packing pp_filter
+        INNER JOIN erp_presale_packing_item pi_filter ON pi_filter.packing_id = pp_filter.id
+        WHERE pp_filter.presale_order_id = io.presale_order_id
+          AND pi_filter.product_id = i.product_id
+          AND (pp_filter.container_no = io.container_no OR pp_filter.container_no IS NULL OR io.container_no IS NULL)
+          AND pi_filter.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
+      )
     </if>
     GROUP BY i.product_id, i.product_code, i.product_name, i.product_name_en
     <if test="onlyAvailable != null and onlyAvailable == 1">
@@ -376,6 +390,9 @@
       ) calc
     ) detail
     WHERE 1 = 1
+    <if test="factoryNo != null and factoryNo != ''">
+      AND detail.factoryNo LIKE CONCAT('%', #{factoryNo}, '%')
+    </if>
     <if test="onlyAvailable != null and onlyAvailable == 1">
       AND detail.availableBoxes &gt; 0
     </if>
@@ -459,6 +476,9 @@
     </if>
     <if test="containerNo != null and containerNo != ''">
       AND COALESCE(pp.container_no, pc.container_no) LIKE CONCAT('%', #{containerNo}, '%')
+    </if>
+    <if test="factoryNo != null and factoryNo != ''">
+      AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
     </if>
     GROUP BY pi.product_id, pi.product_code, pi.product_name, pi.product_name_en
     <if test="onlyAvailable != null and onlyAvailable == 1">
@@ -545,6 +565,9 @@
     <if test="containerNo != null and containerNo != ''">
       AND COALESCE(pp.container_no, pc.container_no) LIKE CONCAT('%', #{containerNo}, '%')
     </if>
+    <if test="factoryNo != null and factoryNo != ''">
+      AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
+    </if>
     <if test="onlyAvailable != null and onlyAvailable == 1">
       AND GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0), 0) &gt; 0
     </if>
@@ -563,6 +586,7 @@
         io.customer_name AS customerName,
         io.warehouse_name AS warehouseName,
         io.container_no AS containerNo,
+        pack.factory_no AS factoryNo,
         i.product_id AS productId,
         i.product_code AS productCode,
         i.product_name AS productName,
@@ -577,6 +601,7 @@
       LEFT JOIN (
         SELECT
           i2.id AS inbound_item_id,
+          MIN(pi.factory_no) AS factory_no,
           SUM(COALESCE(pi.total_weight, 0)) AS total_weight
         FROM erp_inbound_order_item i2
         INNER JOIN erp_inbound_order io2 ON io2.id = i2.inbound_order_id
@@ -602,6 +627,7 @@
             AND soi2.product_id = ri.product_id
         ) AS warehouseName,
         ri.container_no AS containerNo,
+        ri.factory_no AS factoryNo,
         ri.product_id AS productId,
         ri.product_code AS productCode,
         ri.product_name AS productName,
@@ -638,6 +664,9 @@
     </if>
     <if test="containerNo != null and containerNo != ''">
       AND t.containerNo LIKE CONCAT('%', #{containerNo}, '%')
+    </if>
+    <if test="factoryNo != null and factoryNo != ''">
+      AND t.factoryNo LIKE CONCAT('%', #{factoryNo}, '%')
     </if>
     ORDER BY t.bizDate DESC, t.recordType ASC, t.orderNo DESC, t.productCode ASC
   </select>
