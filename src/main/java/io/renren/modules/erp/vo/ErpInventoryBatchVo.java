@@ -13,6 +13,7 @@ public class ErpInventoryBatchVo implements Serializable {
   private Long packingItemId;
   private Long inboundOrderId;
   private Long inboundItemId;
+  private Long sourceAdjustmentItemId;
   private Long presaleOrderId;
   private String presaleOrderNo;
   private String contractNo;
@@ -20,11 +21,13 @@ public class ErpInventoryBatchVo implements Serializable {
   private String customerReference;
   private String brandName;
   private String warehouseName;
+  private Long warehouseId;
   private String containerNo;
   private Long productId;
   private String productCode;
   private String productName;
   private String productNameEn;
+  private String productSpec;
   private String factoryNo;
   private String skuCode;
   private String temperatureZone;
@@ -49,4 +52,5 @@ public class ErpInventoryBatchVo implements Serializable {
   private Integer shelfLifeDays;
   private Integer freshnessWarningDays;
   private Integer freshnessWarning;
+  private String lotType;
 }
