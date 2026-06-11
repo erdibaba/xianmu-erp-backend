@@ -226,7 +226,7 @@
             i.product_spec AS productSpec,
             pi.factory_no AS factoryNo,
             i.sku_code AS skuCode,
-            i.temperature_zone AS temperatureZone,
+            COALESCE(pc.cold_fresh_type, i.temperature_zone) AS temperatureZone,
             b.production_date AS productionDate,
             b.expiry_date AS expiryDate,
             COALESCE(b.box_count, 0) AS batchBoxes,
@@ -270,6 +270,7 @@
             AND (pp.container_no = io.container_no OR pp.container_no IS NULL OR io.container_no IS NULL)
           INNER JOIN erp_presale_packing_item pi ON pi.packing_id = pp.id AND pi.product_id = i.product_id
           INNER JOIN erp_presale_packing_batch b ON b.packing_item_id = pi.id
+          LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
           LEFT JOIN (
             SELECT
@@ -327,7 +328,7 @@
             i.product_spec AS productSpec,
             pack.factory_no AS factoryNo,
             i.sku_code AS skuCode,
-            i.temperature_zone AS temperatureZone,
+            COALESCE(pc.cold_fresh_type, i.temperature_zone) AS temperatureZone,
             i.production_date AS productionDate,
             i.expiry_date AS expiryDate,
             COALESCE(i.actual_qty, 0) AS batchBoxes,
@@ -341,6 +342,7 @@
             ROUND(COALESCE(pack.total_weight, 0), 2) AS itemBatchWeight
           FROM erp_inbound_order_item i
           INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
+          LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
           LEFT JOIN (
             SELECT
