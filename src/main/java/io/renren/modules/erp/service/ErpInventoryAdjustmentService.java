@@ -10,7 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 public interface ErpInventoryAdjustmentService {
   List<ErpInventoryBatchVo> queryAvailableLots(Map<String, Object> params);
 
-  ErpInventoryAdjustmentRecognizeVo recognizeFreshToFrozen(MultipartFile[] files) throws Exception;
+  ErpInventoryAdjustmentRecognizeVo recognizeAdjustment(String adjustmentType, MultipartFile[] files) throws Exception;
 
   void saveAdjustment(ErpInventoryAdjustmentRequest request, Long userId);
 }

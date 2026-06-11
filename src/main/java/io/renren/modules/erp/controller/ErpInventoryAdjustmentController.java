@@ -27,10 +27,10 @@ public class ErpInventoryAdjustmentController extends AbstractController {
     return R.ok().put("list", erpInventoryAdjustmentService.queryAvailableLots(params));
   }
 
-  @PostMapping("/fresh-to-frozen/recognize")
+  @PostMapping("/recognize")
   @RequiresPermissions("erp:inventory-adjustment:save")
-  public R recognizeFreshToFrozen(@RequestParam("files") MultipartFile[] files) throws Exception {
-    return R.ok().put("result", erpInventoryAdjustmentService.recognizeFreshToFrozen(files));
+  public R recognize(@RequestParam("adjustmentType") String adjustmentType, @RequestParam("files") MultipartFile[] files) throws Exception {
+    return R.ok().put("result", erpInventoryAdjustmentService.recognizeAdjustment(adjustmentType, files));
   }
 
   @PostMapping("/save")

@@ -101,9 +101,14 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
   }
 
   @Override
-  public ErpInventoryAdjustmentRecognizeVo recognizeFreshToFrozen(MultipartFile[] files) throws Exception {
+  public ErpInventoryAdjustmentRecognizeVo recognizeAdjustment(String adjustmentType, MultipartFile[] files) throws Exception {
+    if (!TYPE_WAREHOUSE.equals(adjustmentType) && !TYPE_FRESH_TO_FROZEN.equals(adjustmentType)) {
+      throw new RuntimeException("不支持的调整类型");
+    }
+    String docName = TYPE_WAREHOUSE.equals(adjustmentType) ? "转仓库单据" : "鲜转冻单据";
+    String pathType = TYPE_WAREHOUSE.equals(adjustmentType) ? "warehouse-transfer" : "fresh-to-frozen";
     if (files == null || files.length == 0) {
-      throw new RuntimeException("请先上传鲜转冻单据");
+      throw new RuntimeException("请先上传" + docName);
     }
     List<Path> tempFiles = new ArrayList<>();
     List<Path> savedPaths = new ArrayList<>();
@@ -111,12 +116,12 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
     try {
       for (MultipartFile file : files) {
         String suffix = getSuffix(file.getOriginalFilename());
-        Path tempFile = Files.createTempFile("erp-fresh-to-frozen-", suffix);
+        Path tempFile = Files.createTempFile("erp-inventory-adjustment-", suffix);
         tempFiles.add(tempFile);
         file.transferTo(tempFile.toFile());
-        savedPaths.add(saveAdjustmentFile(file, tempFile, suffix, "fresh-to-frozen"));
+        savedPaths.add(saveAdjustmentFile(file, tempFile, suffix, pathType));
       }
-      listFile = Files.createTempFile("erp-fresh-to-frozen-paths-", ".txt");
+      listFile = Files.createTempFile("erp-inventory-adjustment-paths-", ".txt");
       List<String> pathLines = new ArrayList<>();
       for (Path savedPath : savedPaths) {
         pathLines.add(savedPath.toAbsolutePath().toString());
@@ -144,7 +149,7 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       }
       int exitCode = process.waitFor();
       if (exitCode != 0) {
-        throw new RuntimeException("鲜转冻单据OCR识别失败: " + output);
+        throw new RuntimeException(docName + "OCR识别失败: " + output);
       }
       ErpRecognizedInboundResultVo inboundResult = OBJECT_MAPPER.readValue(output, ErpRecognizedInboundResultVo.class);
       ErpInventoryAdjustmentRecognizeVo result = new ErpInventoryAdjustmentRecognizeVo();
@@ -161,7 +166,7 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       List<ErpInventoryBatchVo> lots = buildCurrentLots(null);
       if (recognizedItems != null) {
         for (ErpRecognizedInboundItemVo item : recognizedItems) {
-          result.getItemList().add(matchRecognizedItem(item, lots));
+          result.getItemList().add(matchRecognizedItem(item, lots, adjustmentType));
         }
       }
       return result;
@@ -215,20 +220,21 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       if (source.getAvailableBoxes() == null || transferBoxes > source.getAvailableBoxes()) {
         throw new RuntimeException("第" + lineNo + "行调整箱数不能大于可售箱数");
       }
-      if (source.getAvailableWeightKg() != null && transferWeight.compareTo(source.getAvailableWeightKg()) > 0) {
+      if (TYPE_WAREHOUSE.equals(request.getAdjustmentType())
+          && source.getAvailableWeightKg() != null
+          && transferWeight.compareTo(source.getAvailableWeightKg()) > 0) {
         throw new RuntimeException("第" + lineNo + "行调整重量不能大于可售重量");
       }
-      ErpWarehouseEntity targetWarehouse = null;
+      if (input.getTargetWarehouseId() == null) {
+        throw new RuntimeException("第" + lineNo + "行请选择目标仓库");
+      }
+      ErpWarehouseEntity targetWarehouse = erpWarehouseDao.selectById(input.getTargetWarehouseId());
+      if (targetWarehouse == null) {
+        throw new RuntimeException("第" + lineNo + "行目标仓库不存在");
+      }
       Date targetExpiryDate = source.getExpiryDate();
       String targetTemperatureZone = source.getTemperatureZone();
       if (TYPE_WAREHOUSE.equals(request.getAdjustmentType())) {
-        if (input.getTargetWarehouseId() == null) {
-          throw new RuntimeException("第" + lineNo + "行请选择目标仓库");
-        }
-        targetWarehouse = erpWarehouseDao.selectById(input.getTargetWarehouseId());
-        if (targetWarehouse == null) {
-          throw new RuntimeException("第" + lineNo + "行目标仓库不存在");
-        }
         if (source.getWarehouseId() != null && source.getWarehouseId().equals(targetWarehouse.getId())) {
           throw new RuntimeException("第" + lineNo + "行目标仓库不能和原仓库相同");
         }
@@ -259,8 +265,8 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       item.setUnit("KG");
       item.setSourceWarehouseId(source.getWarehouseId());
       item.setSourceWarehouseName(source.getWarehouseName());
-      item.setTargetWarehouseId(TYPE_WAREHOUSE.equals(request.getAdjustmentType()) ? targetWarehouse.getId() : source.getWarehouseId());
-      item.setTargetWarehouseName(TYPE_WAREHOUSE.equals(request.getAdjustmentType()) ? targetWarehouse.getWarehouseName() : source.getWarehouseName());
+      item.setTargetWarehouseId(targetWarehouse.getId());
+      item.setTargetWarehouseName(targetWarehouse.getWarehouseName());
       item.setContainerNo(source.getContainerNo());
       item.setFactoryNo(source.getFactoryNo());
       item.setSourceTemperatureZone(source.getTemperatureZone());
@@ -279,7 +285,7 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
     saveFiles(adjustment.getId(), request.getFileList(), now);
   }
 
-  private ErpInventoryAdjustmentRecognizedItemVo matchRecognizedItem(ErpRecognizedInboundItemVo item, List<ErpInventoryBatchVo> lots) {
+  private ErpInventoryAdjustmentRecognizedItemVo matchRecognizedItem(ErpRecognizedInboundItemVo item, List<ErpInventoryBatchVo> lots, String adjustmentType) {
     ErpInventoryAdjustmentRecognizedItemVo vo = new ErpInventoryAdjustmentRecognizedItemVo();
     if (item == null) {
       vo.setMatched(Boolean.FALSE);
@@ -304,7 +310,7 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       if (lot.getAvailableBoxes() == null || lot.getAvailableBoxes() <= 0) {
         continue;
       }
-      if (isFrozen(lot.getTemperatureZone())) {
+      if (TYPE_FRESH_TO_FROZEN.equals(adjustmentType) && isFrozen(lot.getTemperatureZone())) {
         continue;
       }
       if (!StringUtils.equalsIgnoreCase(StringUtils.trimToEmpty(lot.getProductCode()), StringUtils.trimToEmpty(code))) {
@@ -321,7 +327,9 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
     }
     if (matched == null) {
       vo.setMatched(Boolean.FALSE);
-      vo.setMatchMessage("未匹配到当前冷鲜可用库存");
+      vo.setMatchMessage(TYPE_FRESH_TO_FROZEN.equals(adjustmentType)
+          ? "未匹配到当前冷鲜可用库存"
+          : "未匹配到当前可用库存");
       return vo;
     }
     fillRecognizedMatch(vo, matched);
