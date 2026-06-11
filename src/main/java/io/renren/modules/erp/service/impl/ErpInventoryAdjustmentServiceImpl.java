@@ -73,9 +73,12 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
   public List<ErpInventoryBatchVo> queryAvailableLots(Map<String, Object> params) {
     String adjustmentType = getString(params, "adjustmentType");
     String keyword = getString(params, "keyword");
-    String warehouseName = getString(params, "warehouseName");
-    String containerNo = getString(params, "containerNo");
+    Long warehouseId = getLong(params, "warehouseId");
+    List<String> containerNos = getStringList(params, "containerNos");
     String factoryNo = getString(params, "factoryNo");
+    if (warehouseId == null || containerNos.isEmpty()) {
+      return new ArrayList<>();
+    }
     List<ErpInventoryBatchVo> lots = buildCurrentLots(keyword);
     List<ErpInventoryBatchVo> result = new ArrayList<>();
     for (ErpInventoryBatchVo lot : lots) {
@@ -85,8 +88,8 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       if (TYPE_FRESH_TO_FROZEN.equals(adjustmentType) && isFrozen(lot.getTemperatureZone())) {
         continue;
       }
-      if (!contains(lot.getWarehouseName(), warehouseName)
-          || !contains(lot.getContainerNo(), containerNo)
+      if (!sameLong(lot.getWarehouseId(), warehouseId)
+          || !containerNos.contains(StringUtils.trimToEmpty(lot.getContainerNo()))
           || !contains(lot.getFactoryNo(), factoryNo)) {
         continue;
       }
@@ -98,6 +101,40 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
         .thenComparing(lot -> nullSafeDate(lot.getExpiryDate()))
         .thenComparing(lot -> StringUtils.defaultString(lot.getContainerNo())));
     return result;
+  }
+
+  @Override
+  public List<String> queryContainerOptions(Map<String, Object> params) {
+    String adjustmentType = getString(params, "adjustmentType");
+    Long warehouseId = getLong(params, "warehouseId");
+    String keyword = getString(params, "keyword");
+    if (warehouseId == null) {
+      return new ArrayList<>();
+    }
+    LinkedHashMap<String, String> containers = new LinkedHashMap<>();
+    for (ErpInventoryBatchVo lot : buildCurrentLots(null)) {
+      String containerNo = StringUtils.trimToEmpty(lot.getContainerNo());
+      if (StringUtils.isBlank(containerNo)) {
+        continue;
+      }
+      if (lot.getAvailableBoxes() == null || lot.getAvailableBoxes() <= 0) {
+        continue;
+      }
+      if (!sameLong(lot.getWarehouseId(), warehouseId)) {
+        continue;
+      }
+      if (TYPE_FRESH_TO_FROZEN.equals(adjustmentType) && isFrozen(lot.getTemperatureZone())) {
+        continue;
+      }
+      if (!contains(containerNo, keyword)) {
+        continue;
+      }
+      containers.putIfAbsent(containerNo, containerNo);
+      if (containers.size() >= 15) {
+        break;
+      }
+    }
+    return new ArrayList<>(containers.values());
   }
 
   @Override
@@ -609,6 +646,33 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
   private String getString(Map<String, Object> params, String key) {
     Object value = params.get(key);
     return value == null ? null : value.toString().trim();
+  }
+
+  private Long getLong(Map<String, Object> params, String key) {
+    String value = getString(params, key);
+    if (StringUtils.isBlank(value)) {
+      return null;
+    }
+    try {
+      return Long.valueOf(value);
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private List<String> getStringList(Map<String, Object> params, String key) {
+    String value = getString(params, key);
+    List<String> list = new ArrayList<>();
+    if (StringUtils.isBlank(value)) {
+      return list;
+    }
+    for (String item : value.split(",")) {
+      String text = StringUtils.trimToEmpty(item);
+      if (StringUtils.isNotBlank(text)) {
+        list.add(text);
+      }
+    }
+    return list;
   }
 
   private Date nullSafeDate(Date date) {

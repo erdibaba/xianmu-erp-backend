@@ -27,6 +27,12 @@ public class ErpInventoryAdjustmentController extends AbstractController {
     return R.ok().put("list", erpInventoryAdjustmentService.queryAvailableLots(params));
   }
 
+  @GetMapping("/containers")
+  @RequiresPermissions("erp:inventory-adjustment:list")
+  public R containers(@RequestParam Map<String, Object> params) {
+    return R.ok().put("list", erpInventoryAdjustmentService.queryContainerOptions(params));
+  }
+
   @PostMapping("/recognize")
   @RequiresPermissions("erp:inventory-adjustment:save")
   public R recognize(@RequestParam("adjustmentType") String adjustmentType, @RequestParam("files") MultipartFile[] files) throws Exception {
