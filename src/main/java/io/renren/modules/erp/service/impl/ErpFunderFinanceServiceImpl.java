@@ -369,11 +369,20 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         .divide(ONE_HUNDRED, 16, RoundingMode.HALF_UP)
         .divide(DAYS_PER_YEAR, 16, RoundingMode.HALF_UP)
         .multiply(new BigDecimal(days));
+    BigDecimal handlingFee = money(repayment.getHandlingFeeAmount());
+    if (handlingFee.compareTo(BigDecimal.ZERO) < 0) {
+      throw new RuntimeException("手续费不能小于0");
+    }
+    if (handlingFee.compareTo(BigDecimal.ZERO) > 0 && StringUtils.isBlank(repayment.getHandlingFeeReason())) {
+      throw new RuntimeException("填写手续费时必须填写手续费原因");
+    }
     repayment.setRepaymentPrincipal(principal);
     repayment.setAnnualInterestRate(rate(loan.getAnnualInterestRate()));
     repayment.setLoanDays(days);
     repayment.setInterestAmount(decimal2(interest));
-    repayment.setExpectedPaymentAmount(decimal2(principal.add(interest)));
+    repayment.setHandlingFeeAmount(handlingFee);
+    repayment.setHandlingFeeReason(StringUtils.trimToNull(repayment.getHandlingFeeReason()));
+    repayment.setExpectedPaymentAmount(decimal2(principal.add(interest).add(handlingFee)));
     if (repayment.getModifiedAmount() != null) {
       repayment.setAmountMatched(money(repayment.getModifiedAmount())
           .compareTo(money(repayment.getExpectedPaymentAmount())) == 0 ? 1 : 0);
@@ -411,6 +420,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     repayment.setLineNo(maxLine + 1);
     repayment.setRecognizedAmount(money(repayment.getRecognizedAmount()));
     repayment.setModifiedAmount(money(repayment.getModifiedAmount()));
+    repayment.setHandlingFeeAmount(money(repayment.getHandlingFeeAmount()));
+    repayment.setHandlingFeeReason(StringUtils.trimToNull(repayment.getHandlingFeeReason()));
     repayment.setAmountMatched(repayment.getModifiedAmount()
         .compareTo(money(repayment.getExpectedPaymentAmount())) == 0 ? 1 : 0);
     repayment.setStatus(1);

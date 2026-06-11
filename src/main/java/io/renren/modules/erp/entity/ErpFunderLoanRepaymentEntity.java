@@ -22,6 +22,8 @@ public class ErpFunderLoanRepaymentEntity implements Serializable {
   private BigDecimal annualInterestRate;
   private Integer loanDays;
   private BigDecimal interestAmount;
+  private BigDecimal handlingFeeAmount;
+  private String handlingFeeReason;
   private BigDecimal expectedPaymentAmount;
   private BigDecimal recognizedAmount;
   private BigDecimal modifiedAmount;
