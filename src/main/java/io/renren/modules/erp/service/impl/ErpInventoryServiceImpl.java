@@ -7,6 +7,7 @@ import io.renren.modules.erp.vo.ErpInventoryBatchVo;
 import io.renren.modules.erp.vo.ErpInventoryRecordVo;
 import io.renren.modules.erp.vo.ErpInventorySummaryVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,21 +28,22 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
   @Override
   public List<ErpSpotInventoryVo> querySpot(Map<String, Object> params) {
     String keyword = getString(params, "keyword");
-    String warehouseName = getString(params, "warehouseName");
-    String containerNo = getString(params, "containerNo");
+    Long warehouseId = getLong(params, "warehouseId");
+    List<String> containerNos = getList(params, "containerNos");
     String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.querySpot(keyword, warehouseName, containerNo, factoryNo, onlyAvailable);
+    return erpInventoryDao.querySpot(keyword, warehouseId, containerNos, factoryNo, onlyAvailable);
   }
 
   @Override
   public List<ErpFuturesInventoryVo> queryFutures(Map<String, Object> params) {
     String keyword = getString(params, "keyword");
+    Long warehouseId = getLong(params, "warehouseId");
     String contractNo = getString(params, "contractNo");
-    String containerNo = getString(params, "containerNo");
+    List<String> containerNos = getList(params, "containerNos");
     String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.queryFutures(keyword, contractNo, containerNo, factoryNo, onlyAvailable);
+    return erpInventoryDao.queryFutures(keyword, warehouseId, contractNo, containerNos, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -50,11 +52,11 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     if (productId == null) {
       throw new RuntimeException("缺少库存批次查询条件");
     }
-    String warehouseName = getString(params, "warehouseName");
-    String containerNo = getString(params, "containerNo");
+    Long warehouseId = getLong(params, "warehouseId");
+    List<String> containerNos = getList(params, "containerNos");
     String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.querySpotBatches(productId, warehouseName, containerNo, factoryNo, onlyAvailable);
+    return erpInventoryDao.querySpotBatches(productId, warehouseId, containerNos, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -63,11 +65,26 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     if (productId == null) {
       throw new RuntimeException("缺少期货库存产品");
     }
+    Long warehouseId = getLong(params, "warehouseId");
     String contractNo = getString(params, "contractNo");
-    String containerNo = getString(params, "containerNo");
+    List<String> containerNos = getList(params, "containerNos");
     String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.queryFuturesBatches(productId, contractNo, containerNo, factoryNo, onlyAvailable);
+    return erpInventoryDao.queryFuturesBatches(productId, warehouseId, contractNo, containerNos, factoryNo, onlyAvailable);
+  }
+
+  @Override
+  public List<String> queryContainerOptions(Map<String, Object> params) {
+    Long warehouseId = getLong(params, "warehouseId");
+    if (warehouseId == null) {
+      return new ArrayList<>();
+    }
+    String inventoryType = getString(params, "inventoryType");
+    String keyword = getString(params, "keyword");
+    if ("futures".equalsIgnoreCase(inventoryType)) {
+      return erpInventoryDao.queryFuturesContainers(warehouseId, keyword);
+    }
+    return erpInventoryDao.querySpotContainers(warehouseId, keyword);
   }
 
   @Override
@@ -100,5 +117,20 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
       return null;
     }
     return Long.valueOf(value.toString());
+  }
+
+  private List<String> getList(Map<String, Object> params, String key) {
+    String value = getString(params, key);
+    List<String> result = new ArrayList<>();
+    if (value == null || value.length() == 0) {
+      return result;
+    }
+    for (String item : value.split(",")) {
+      String text = item == null ? "" : item.trim();
+      if (text.length() > 0) {
+        result.add(text);
+      }
+    }
+    return result;
   }
 }

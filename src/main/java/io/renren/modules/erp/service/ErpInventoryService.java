@@ -19,5 +19,7 @@ public interface ErpInventoryService {
 
   List<ErpInventoryBatchVo> queryFuturesBatches(Map<String, Object> params);
 
+  List<String> queryContainerOptions(Map<String, Object> params);
+
   List<ErpInventoryRecordVo> queryRecords(Map<String, Object> params);
 }

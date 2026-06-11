@@ -127,11 +127,14 @@
         OR i.product_name_en LIKE CONCAT('%', #{keyword}, '%')
       )
     </if>
-    <if test="warehouseName != null and warehouseName != ''">
-      AND io.warehouse_name LIKE CONCAT('%', #{warehouseName}, '%')
+    <if test="warehouseId != null">
+      AND io.warehouse_id = #{warehouseId}
     </if>
-    <if test="containerNo != null and containerNo != ''">
-      AND io.container_no LIKE CONCAT('%', #{containerNo}, '%')
+    <if test="containerNos != null and containerNos.size() > 0">
+      AND io.container_no IN
+      <foreach collection="containerNos" item="containerNo" open="(" separator="," close=")">
+        #{containerNo}
+      </foreach>
     </if>
     <if test="factoryNo != null and factoryNo != ''">
       AND EXISTS (
@@ -296,11 +299,14 @@
             GROUP BY soi.source_inbound_item_id
           ) alloc ON alloc.source_inbound_item_id = i.id
           WHERE i.product_id = #{productId}
-          <if test="warehouseName != null and warehouseName != ''">
-            AND io.warehouse_name LIKE CONCAT('%', #{warehouseName}, '%')
+          <if test="warehouseId != null">
+            AND io.warehouse_id = #{warehouseId}
           </if>
-          <if test="containerNo != null and containerNo != ''">
-            AND io.container_no LIKE CONCAT('%', #{containerNo}, '%')
+          <if test="containerNos != null and containerNos.size() > 0">
+            AND io.container_no IN
+            <foreach collection="containerNos" item="containerNo" open="(" separator="," close=")">
+              #{containerNo}
+            </foreach>
           </if>
           UNION ALL
           SELECT
@@ -377,11 +383,14 @@
             GROUP BY soi.source_inbound_item_id
           ) alloc ON alloc.source_inbound_item_id = i.id
           WHERE i.product_id = #{productId}
-          <if test="warehouseName != null and warehouseName != ''">
-            AND io.warehouse_name LIKE CONCAT('%', #{warehouseName}, '%')
+          <if test="warehouseId != null">
+            AND io.warehouse_id = #{warehouseId}
           </if>
-          <if test="containerNo != null and containerNo != ''">
-            AND io.container_no LIKE CONCAT('%', #{containerNo}, '%')
+          <if test="containerNos != null and containerNos.size() > 0">
+            AND io.container_no IN
+            <foreach collection="containerNos" item="containerNo" open="(" separator="," close=")">
+              #{containerNo}
+            </foreach>
           </if>
           AND NOT EXISTS (
             SELECT 1
@@ -480,8 +489,11 @@
     <if test="contractNo != null and contractNo != ''">
       AND COALESCE(pp.contract_no, pc.contract_no, po.seller_contract_no, po.order_no) LIKE CONCAT('%', #{contractNo}, '%')
     </if>
-    <if test="containerNo != null and containerNo != ''">
-      AND COALESCE(pp.container_no, pc.container_no) LIKE CONCAT('%', #{containerNo}, '%')
+    <if test="containerNos != null and containerNos.size() > 0">
+      AND COALESCE(pp.container_no, pc.container_no) IN
+      <foreach collection="containerNos" item="containerNo" open="(" separator="," close=")">
+        #{containerNo}
+      </foreach>
     </if>
     <if test="factoryNo != null and factoryNo != ''">
       AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
@@ -568,8 +580,11 @@
     <if test="contractNo != null and contractNo != ''">
       AND COALESCE(pp.contract_no, pc.contract_no, po.seller_contract_no, po.order_no) LIKE CONCAT('%', #{contractNo}, '%')
     </if>
-    <if test="containerNo != null and containerNo != ''">
-      AND COALESCE(pp.container_no, pc.container_no) LIKE CONCAT('%', #{containerNo}, '%')
+    <if test="containerNos != null and containerNos.size() > 0">
+      AND COALESCE(pp.container_no, pc.container_no) IN
+      <foreach collection="containerNos" item="containerNo" open="(" separator="," close=")">
+        #{containerNo}
+      </foreach>
     </if>
     <if test="factoryNo != null and factoryNo != ''">
       AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
@@ -578,6 +593,40 @@
       AND GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0), 0) &gt; 0
     </if>
     ORDER BY b.production_date ASC, b.expiry_date ASC, b.line_no ASC, b.id ASC
+  </select>
+
+  <select id="querySpotContainers" resultType="java.lang.String">
+    SELECT DISTINCT io.container_no
+    FROM erp_inbound_order io
+    INNER JOIN erp_inbound_order_item i ON i.inbound_order_id = io.id
+    WHERE io.warehouse_id = #{warehouseId}
+      AND io.container_no IS NOT NULL
+      AND io.container_no != ''
+      AND i.product_id IS NOT NULL
+    <if test="keyword != null and keyword != ''">
+      AND io.container_no LIKE CONCAT('%', #{keyword}, '%')
+    </if>
+    ORDER BY io.container_no ASC
+    LIMIT 15
+  </select>
+
+  <select id="queryFuturesContainers" resultType="java.lang.String">
+    SELECT DISTINCT containerNo
+    FROM (
+      SELECT COALESCE(pp.container_no, pc.container_no) AS containerNo
+      FROM erp_presale_packing_item pi
+      INNER JOIN erp_presale_packing pp ON pp.id = pi.packing_id
+      INNER JOIN erp_presale_order po ON po.id = pp.presale_order_id
+      LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = po.id
+      WHERE pi.product_id IS NOT NULL
+    ) t
+    WHERE t.containerNo IS NOT NULL
+      AND t.containerNo != ''
+    <if test="keyword != null and keyword != ''">
+      AND t.containerNo LIKE CONCAT('%', #{keyword}, '%')
+    </if>
+    ORDER BY t.containerNo ASC
+    LIMIT 15
   </select>
 
   <select id="queryRecords" resultType="io.renren.modules.erp.vo.ErpInventoryRecordVo">
