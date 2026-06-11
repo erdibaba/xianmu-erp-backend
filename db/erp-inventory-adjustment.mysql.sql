@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS erp_inventory_adjustment_item (
   KEY idx_inventory_adjustment_item_target (target_warehouse_id, target_temperature_zone, target_expiry_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存调整明细表';
 
+CREATE TABLE IF NOT EXISTS erp_inventory_adjustment_file (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  adjustment_id BIGINT NOT NULL COMMENT '库存调整主表ID',
+  line_no INT DEFAULT NULL COMMENT '行号',
+  file_path VARCHAR(500) NOT NULL COMMENT '归档文件路径',
+  file_name VARCHAR(255) DEFAULT NULL COMMENT '归档文件名称',
+  create_time DATETIME DEFAULT NULL COMMENT '创建时间',
+  update_time DATETIME DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (id),
+  KEY idx_inventory_adjustment_file_adjustment (adjustment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存调整原件归档表';
+
 DELETE FROM sys_role_menu WHERE menu_id = 87 AND EXISTS (
   SELECT 1 FROM sys_menu WHERE menu_id = 87 AND perms = 'erp:inventory-adjustment:save'
 );

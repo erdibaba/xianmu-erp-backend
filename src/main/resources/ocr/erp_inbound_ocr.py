@@ -149,7 +149,9 @@ def parse_relaxed_inbound_row(tokens):
 
     expected_qty = int_values[0] if len(int_values) >= 1 else None
     actual_qty = int_values[1] if len(int_values) >= 2 else None
+    factory_no = str(int_values[2]) if len(int_values) >= 3 else None
     spec_weight = dec(decimal_values[0]) if decimal_values else None
+    total_weight = dec(decimal_values[-1]) if len(decimal_values) >= 2 else (spec_weight * Decimal(actual_qty) if spec_weight is not None and actual_qty is not None else None)
 
     if not any([product_code, product_name, expected_qty is not None, actual_qty is not None, inbound_date, container_token, spec_weight is not None]):
         return None
@@ -162,10 +164,12 @@ def parse_relaxed_inbound_row(tokens):
         "unit": "箱" if expected_qty is not None or actual_qty is not None else None,
         "expectedQty": expected_qty,
         "actualQty": actual_qty,
+        "factoryNo": factory_no,
         "temperatureZone": "冷鲜" if "冰鲜" in row_text else None,
         "productionDate": normalize_date(inbound_date),
         "expiryDate": None,
-        "shelfLifeDays": None
+        "shelfLifeDays": None,
+        "totalWeightKg": dec_str(total_weight, "0.00") if total_weight is not None else None
     }
 
 
@@ -176,6 +180,11 @@ def parse_row_tokens(tokens):
     if not product_code_match:
         return parse_relaxed_inbound_row(tokens)
     product_code = product_code_match.group(1)
+    product_code_index = -1
+    for idx, token in enumerate(tokens):
+        if re.search(r"C%s" % product_code, token):
+            product_code_index = idx
+            break
 
     container_match = re.search(r"(MCRU\d{7}(?:-\d+)?)", joined)
     container_token = container_match.group(1) if container_match else None
@@ -194,6 +203,8 @@ def parse_row_tokens(tokens):
     production_date = None
     expiry_date = None
     shelf_life_days = None
+    factory_no = None
+    total_weight = None
 
     for idx, token in enumerate(tokens):
         if spec_weight is None and re.match(r"^\d+\.\d+$", token):
@@ -219,6 +230,45 @@ def parse_row_tokens(tokens):
                 shelf_life_days = int_values[2]
             break
 
+    if expected_qty is None or actual_qty is None:
+        numeric_values = []
+        int_positions = []
+        decimal_values = []
+        for idx, token in enumerate(tokens):
+            if idx == product_code_index:
+                continue
+            if re.search(r"[A-Z]*RU\d{7}", token, re.IGNORECASE) or re.search(r"20\d{2}-\d{2}-\d{2}", token):
+                continue
+            normalized = normalize_number_token(token)
+            if re.match(r"^\d+$", normalized):
+                value = int(normalized)
+                if value <= 10000:
+                    numeric_values.append(normalized)
+                    int_positions.append((idx, value))
+            elif re.match(r"^\d+\.\d+$", normalized):
+                numeric_values.append(normalized)
+                decimal_values.append(normalized)
+        if len(int_positions) >= 1 and expected_qty is None:
+            expected_qty = int_positions[0][1]
+        if len(int_positions) >= 2 and actual_qty is None:
+            actual_qty = int_positions[1][1]
+        if container_match and len(int_positions) >= 3:
+            factory_no = str(int_positions[2][1])
+        elif len(int_positions) >= 3:
+            factory_no = str(int_positions[2][1])
+        if spec_weight is None and decimal_values:
+            spec_weight = dec(decimal_values[0])
+        if len(decimal_values) >= 2:
+            total_weight = dec(decimal_values[-1])
+        elif spec_weight is not None and actual_qty is not None:
+            total_weight = spec_weight * Decimal(actual_qty)
+
+    if factory_no is None and container_match:
+        after_container = joined[container_match.end():]
+        factory_match = re.search(r"\b(\d{1,4})\b", after_container)
+        if factory_match:
+            factory_no = factory_match.group(1)
+
     return {
         "productCode": product_code,
         "skuCode": normalize_sku(product_code, container_token),
@@ -227,10 +277,12 @@ def parse_row_tokens(tokens):
         "unit": unit,
         "expectedQty": expected_qty,
         "actualQty": actual_qty,
+        "factoryNo": factory_no,
         "temperatureZone": temp_zone,
         "productionDate": normalize_date(production_date),
         "expiryDate": normalize_date(expiry_date),
-        "shelfLifeDays": shelf_life_days
+        "shelfLifeDays": shelf_life_days,
+        "totalWeightKg": dec_str(total_weight, "0.00") if total_weight is not None else None
     }
 
 

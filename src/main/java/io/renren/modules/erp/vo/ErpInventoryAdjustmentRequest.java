@@ -13,6 +13,7 @@ public class ErpInventoryAdjustmentRequest implements Serializable {
   private String adjustmentType;
   private String remark;
   private List<Item> itemList;
+  private List<ErpRecognizedInboundFileVo> fileList;
 
   @Data
   public static class Item implements Serializable {

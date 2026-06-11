@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("erp/inventory-adjustment")
@@ -24,6 +25,12 @@ public class ErpInventoryAdjustmentController extends AbstractController {
   @RequiresPermissions("erp:inventory-adjustment:list")
   public R lots(@RequestParam Map<String, Object> params) {
     return R.ok().put("list", erpInventoryAdjustmentService.queryAvailableLots(params));
+  }
+
+  @PostMapping("/fresh-to-frozen/recognize")
+  @RequiresPermissions("erp:inventory-adjustment:save")
+  public R recognizeFreshToFrozen(@RequestParam("files") MultipartFile[] files) throws Exception {
+    return R.ok().put("result", erpInventoryAdjustmentService.recognizeFreshToFrozen(files));
   }
 
   @PostMapping("/save")

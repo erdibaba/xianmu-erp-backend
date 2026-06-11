@@ -1,19 +1,37 @@
 package io.renren.modules.erp.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.renren.modules.erp.dao.ErpInventoryAdjustmentDao;
+import io.renren.modules.erp.dao.ErpInventoryAdjustmentFileDao;
 import io.renren.modules.erp.dao.ErpInventoryAdjustmentItemDao;
 import io.renren.modules.erp.dao.ErpInventoryDao;
 import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.entity.ErpInventoryAdjustmentEntity;
+import io.renren.modules.erp.entity.ErpInventoryAdjustmentFileEntity;
 import io.renren.modules.erp.entity.ErpInventoryAdjustmentItemEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpInventoryAdjustmentService;
+import io.renren.modules.erp.vo.ErpInventoryAdjustmentRecognizeVo;
+import io.renren.modules.erp.vo.ErpInventoryAdjustmentRecognizedItemVo;
 import io.renren.modules.erp.vo.ErpInventoryAdjustmentRequest;
 import io.renren.modules.erp.vo.ErpInventoryBatchVo;
+import io.renren.modules.erp.vo.ErpRecognizedInboundFileVo;
+import io.renren.modules.erp.vo.ErpRecognizedInboundItemVo;
+import io.renren.modules.erp.vo.ErpRecognizedInboundResultVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,18 +41,24 @@ import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service("erpInventoryAdjustmentService")
 public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustmentService {
   private static final String TYPE_WAREHOUSE = "WAREHOUSE_TRANSFER";
   private static final String TYPE_FRESH_TO_FROZEN = "FRESH_TO_FROZEN";
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+      .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
   @Autowired
   private ErpInventoryDao erpInventoryDao;
   @Autowired
   private ErpInventoryAdjustmentDao erpInventoryAdjustmentDao;
+  @Autowired
+  private ErpInventoryAdjustmentFileDao erpInventoryAdjustmentFileDao;
   @Autowired
   private ErpInventoryAdjustmentItemDao erpInventoryAdjustmentItemDao;
   @Autowired
@@ -69,6 +93,81 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
         .thenComparing(lot -> nullSafeDate(lot.getExpiryDate()))
         .thenComparing(lot -> StringUtils.defaultString(lot.getContainerNo())));
     return result;
+  }
+
+  @Override
+  public ErpInventoryAdjustmentRecognizeVo recognizeFreshToFrozen(MultipartFile[] files) throws Exception {
+    if (files == null || files.length == 0) {
+      throw new RuntimeException("请先上传鲜转冻单据");
+    }
+    List<Path> tempFiles = new ArrayList<>();
+    List<Path> savedPaths = new ArrayList<>();
+    Path listFile = null;
+    try {
+      for (MultipartFile file : files) {
+        String suffix = getSuffix(file.getOriginalFilename());
+        Path tempFile = Files.createTempFile("erp-fresh-to-frozen-", suffix);
+        tempFiles.add(tempFile);
+        file.transferTo(tempFile.toFile());
+        savedPaths.add(saveAdjustmentFile(file, tempFile, suffix, "fresh-to-frozen"));
+      }
+      listFile = Files.createTempFile("erp-fresh-to-frozen-paths-", ".txt");
+      List<String> pathLines = new ArrayList<>();
+      for (Path savedPath : savedPaths) {
+        pathLines.add(savedPath.toAbsolutePath().toString());
+      }
+      Files.write(listFile, pathLines, StandardCharsets.UTF_8);
+      ProcessBuilder processBuilder = new ProcessBuilder(
+          "python",
+          "-X",
+          "utf8",
+          ensureInboundOcrScriptFile().getAbsolutePath(),
+          listFile.toAbsolutePath().toString()
+      );
+      processBuilder.environment().put("PYTHONIOENCODING", "UTF-8");
+      processBuilder.redirectErrorStream(true);
+      Process process = processBuilder.start();
+      String output;
+      try (InputStream inputStream = process.getInputStream();
+           ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+        byte[] bytes = new byte[4096];
+        int len;
+        while ((len = inputStream.read(bytes)) != -1) {
+          buffer.write(bytes, 0, len);
+        }
+        output = new String(buffer.toByteArray(), StandardCharsets.UTF_8).trim();
+      }
+      int exitCode = process.waitFor();
+      if (exitCode != 0) {
+        throw new RuntimeException("鲜转冻单据OCR识别失败: " + output);
+      }
+      ErpRecognizedInboundResultVo inboundResult = OBJECT_MAPPER.readValue(output, ErpRecognizedInboundResultVo.class);
+      ErpInventoryAdjustmentRecognizeVo result = new ErpInventoryAdjustmentRecognizeVo();
+      result.setSuccess(Boolean.TRUE);
+      result.setRawText(inboundResult == null ? null : inboundResult.getRawText());
+      for (Path savedPath : savedPaths) {
+        ErpRecognizedInboundFileVo fileVo = new ErpRecognizedInboundFileVo();
+        fileVo.setFilePath(savedPath.toAbsolutePath().toString());
+        fileVo.setFileName(savedPath.getFileName().toString());
+        result.getFileList().add(fileVo);
+      }
+      List<ErpRecognizedInboundItemVo> recognizedItems = inboundResult == null || inboundResult.getInboundDraft() == null
+          ? new ArrayList<>() : inboundResult.getInboundDraft().getItemList();
+      List<ErpInventoryBatchVo> lots = buildCurrentLots(null);
+      if (recognizedItems != null) {
+        for (ErpRecognizedInboundItemVo item : recognizedItems) {
+          result.getItemList().add(matchRecognizedItem(item, lots));
+        }
+      }
+      return result;
+    } finally {
+      if (listFile != null) {
+        Files.deleteIfExists(listFile);
+      }
+      for (Path tempFile : tempFiles) {
+        Files.deleteIfExists(tempFile);
+      }
+    }
   }
 
   @Override
@@ -171,6 +270,100 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
       item.setUpdateTime(now);
       erpInventoryAdjustmentItemDao.insert(item);
       lineNo++;
+    }
+    saveFiles(adjustment.getId(), request.getFileList(), now);
+  }
+
+  private ErpInventoryAdjustmentRecognizedItemVo matchRecognizedItem(ErpRecognizedInboundItemVo item, List<ErpInventoryBatchVo> lots) {
+    ErpInventoryAdjustmentRecognizedItemVo vo = new ErpInventoryAdjustmentRecognizedItemVo();
+    if (item == null) {
+      vo.setMatched(Boolean.FALSE);
+      vo.setMatchMessage("识别行为空");
+      return vo;
+    }
+    String code = normalizeProductCode(firstNonBlank(item.getProductCode(), extractProductCode(item.getSkuCode())));
+    String containerNo = extractContainerNo(item.getSkuCode());
+    String factoryNo = StringUtils.trimToEmpty(item.getFactoryNo());
+    vo.setRecognizedProductCode(code);
+    vo.setRecognizedSkuCode(item.getSkuCode());
+    vo.setRecognizedProductName(item.getProductName());
+    vo.setRecognizedFactoryNo(factoryNo);
+    vo.setRecognizedContainerNo(containerNo);
+    vo.setRecognizedExpectedQty(item.getExpectedQty());
+    vo.setRecognizedActualQty(item.getActualQty());
+    vo.setRecognizedSpecWeight(item.getSpecWeight());
+    vo.setRecognizedTotalWeightKg(item.getTotalWeightKg());
+    vo.setRecognizedInboundDate(item.getProductionDate());
+    ErpInventoryBatchVo matched = null;
+    for (ErpInventoryBatchVo lot : lots) {
+      if (lot.getAvailableBoxes() == null || lot.getAvailableBoxes() <= 0) {
+        continue;
+      }
+      if (isFrozen(lot.getTemperatureZone())) {
+        continue;
+      }
+      if (!StringUtils.equalsIgnoreCase(StringUtils.trimToEmpty(lot.getProductCode()), StringUtils.trimToEmpty(code))) {
+        continue;
+      }
+      if (StringUtils.isNotBlank(containerNo) && !sameContainer(lot.getContainerNo(), containerNo)) {
+        continue;
+      }
+      if (StringUtils.isNotBlank(factoryNo) && !StringUtils.equalsIgnoreCase(StringUtils.trimToEmpty(lot.getFactoryNo()), factoryNo)) {
+        continue;
+      }
+      matched = lot;
+      break;
+    }
+    if (matched == null) {
+      vo.setMatched(Boolean.FALSE);
+      vo.setMatchMessage("未匹配到当前冷鲜可用库存");
+      return vo;
+    }
+    fillRecognizedMatch(vo, matched);
+    vo.setMatched(Boolean.TRUE);
+    vo.setMatchMessage("已匹配");
+    return vo;
+  }
+
+  private void fillRecognizedMatch(ErpInventoryAdjustmentRecognizedItemVo vo, ErpInventoryBatchVo lot) {
+    vo.setSourceAdjustmentItemId(lot.getSourceAdjustmentItemId());
+    vo.setInboundOrderId(lot.getInboundOrderId());
+    vo.setInboundItemId(lot.getInboundItemId());
+    vo.setPackingItemId(lot.getPackingItemId());
+    vo.setBatchId(lot.getBatchId());
+    vo.setProductId(lot.getProductId());
+    vo.setProductCode(lot.getProductCode());
+    vo.setProductName(lot.getProductName());
+    vo.setProductNameEn(lot.getProductNameEn());
+    vo.setProductSpec(lot.getProductSpec());
+    vo.setWarehouseId(lot.getWarehouseId());
+    vo.setWarehouseName(lot.getWarehouseName());
+    vo.setContainerNo(lot.getContainerNo());
+    vo.setFactoryNo(lot.getFactoryNo());
+    vo.setTemperatureZone(lot.getTemperatureZone());
+    vo.setProductionDate(lot.getProductionDate());
+    vo.setExpiryDate(lot.getExpiryDate());
+    vo.setAvailableBoxes(lot.getAvailableBoxes());
+    vo.setAvailableWeightKg(lot.getAvailableWeightKg());
+  }
+
+  private void saveFiles(Long adjustmentId, List<ErpRecognizedInboundFileVo> fileList, Date now) {
+    if (fileList == null || fileList.isEmpty()) {
+      return;
+    }
+    int lineNo = 1;
+    for (ErpRecognizedInboundFileVo file : fileList) {
+      if (file == null || StringUtils.isBlank(file.getFilePath())) {
+        continue;
+      }
+      ErpInventoryAdjustmentFileEntity entity = new ErpInventoryAdjustmentFileEntity();
+      entity.setAdjustmentId(adjustmentId);
+      entity.setLineNo(lineNo++);
+      entity.setFilePath(file.getFilePath());
+      entity.setFileName(firstNonBlank(file.getFileName(), new File(file.getFilePath()).getName()));
+      entity.setCreateTime(now);
+      entity.setUpdateTime(now);
+      erpInventoryAdjustmentFileDao.insert(entity);
     }
   }
 
@@ -319,6 +512,81 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
 
   private boolean isFrozen(String temperatureZone) {
     return StringUtils.contains(StringUtils.defaultString(temperatureZone), "冷冻");
+  }
+
+  private String firstNonBlank(String... values) {
+    for (String value : values) {
+      if (StringUtils.isNotBlank(value)) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  private String normalizeProductCode(String code) {
+    if (StringUtils.isBlank(code)) {
+      return null;
+    }
+    return StringUtils.upperCase(code).replaceAll("[^0-9]", "");
+  }
+
+  private String extractProductCode(String skuCode) {
+    if (StringUtils.isBlank(skuCode)) {
+      return null;
+    }
+    java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("C(\\d{5})").matcher(StringUtils.upperCase(skuCode));
+    return matcher.find() ? matcher.group(1) : null;
+  }
+
+  private String extractContainerNo(String skuCode) {
+    if (StringUtils.isBlank(skuCode)) {
+      return null;
+    }
+    java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(MCRU\\d{7}(?:-\\d+)?)").matcher(StringUtils.upperCase(skuCode));
+    return matcher.find() ? matcher.group(1) : null;
+  }
+
+  private boolean sameContainer(String left, String right) {
+    String l = StringUtils.upperCase(StringUtils.trimToEmpty(left));
+    String r = StringUtils.upperCase(StringUtils.trimToEmpty(right));
+    return StringUtils.equals(l, r) || StringUtils.startsWith(l, r) || StringUtils.startsWith(r, l);
+  }
+
+  private File ensureInboundOcrScriptFile() throws Exception {
+    File target = new File(System.getProperty("java.io.tmpdir"), "erp_inbound_ocr.py");
+    ClassPathResource resource = new ClassPathResource("ocr/erp_inbound_ocr.py");
+    try (InputStream inputStream = resource.getInputStream()) {
+      Files.copy(inputStream, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+    }
+    return target;
+  }
+
+  private String getSuffix(String filename) {
+    if (StringUtils.isBlank(filename) || filename.lastIndexOf(".") < 0) {
+      return ".tmp";
+    }
+    return filename.substring(filename.lastIndexOf("."));
+  }
+
+  private Path saveAdjustmentFile(MultipartFile file, Path tempFile, String suffix, String type) throws Exception {
+    String baseDir = "D:\\renren-fast-vue\\renren-fast\\uploads\\inventory-adjustment";
+    String dayFolder = new SimpleDateFormat("yyyyMMdd").format(new Date());
+    Path dir = Paths.get(baseDir, type, dayFolder);
+    Files.createDirectories(dir);
+    String originalName = StringUtils.defaultString(file.getOriginalFilename(), "inventory-adjustment-file")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">");
+    String safeName = originalName.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+    if (StringUtils.isBlank(safeName)) {
+      safeName = "inventory-adjustment-file" + suffix;
+    }
+    if (!safeName.toLowerCase().endsWith(suffix.toLowerCase())) {
+      safeName = safeName + suffix;
+    }
+    Path target = dir.resolve(System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8) + "_" + safeName);
+    Files.copy(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
+    return target;
   }
 
   private BigDecimal nvl(BigDecimal value) {

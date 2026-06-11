@@ -15,6 +15,7 @@ public class ErpRecognizedInboundItemVo implements Serializable {
   private String productName;
   private String productNameEn;
   private String productSpec;
+  private String factoryNo;
   private String unit;
   private Integer expectedQty;
   private Integer actualQty;
@@ -24,4 +25,5 @@ public class ErpRecognizedInboundItemVo implements Serializable {
   private Date expiryDate;
   private Integer shelfLifeDays;
   private BigDecimal specWeight;
+  private BigDecimal totalWeightKg;
 }
