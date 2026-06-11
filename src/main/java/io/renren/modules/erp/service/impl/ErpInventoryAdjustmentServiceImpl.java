@@ -32,6 +32,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
+import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -52,6 +53,10 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
   private static final String TYPE_FRESH_TO_FROZEN = "FRESH_TO_FROZEN";
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
       .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+  static {
+    DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    OBJECT_MAPPER.setDateFormat(dateFormat);
+  }
 
   @Autowired
   private ErpInventoryDao erpInventoryDao;
