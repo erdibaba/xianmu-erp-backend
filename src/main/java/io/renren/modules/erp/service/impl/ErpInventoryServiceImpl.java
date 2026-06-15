@@ -54,9 +54,10 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     }
     Long warehouseId = getLong(params, "warehouseId");
     List<String> containerNos = getList(params, "containerNos");
+    String ownershipName = getString(params, "ownershipName");
     String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.querySpotBatches(productId, warehouseId, containerNos, factoryNo, onlyAvailable);
+    return erpInventoryDao.querySpotBatches(productId, warehouseId, containerNos, ownershipName, factoryNo, onlyAvailable);
   }
 
   @Override
@@ -68,9 +69,10 @@ public class ErpInventoryServiceImpl implements ErpInventoryService {
     Long warehouseId = getLong(params, "warehouseId");
     String contractNo = getString(params, "contractNo");
     List<String> containerNos = getList(params, "containerNos");
+    String ownershipName = getString(params, "ownershipName");
     String factoryNo = getString(params, "factoryNo");
     Integer onlyAvailable = getFlag(params, "onlyAvailable");
-    return erpInventoryDao.queryFuturesBatches(productId, warehouseId, contractNo, containerNos, factoryNo, onlyAvailable);
+    return erpInventoryDao.queryFuturesBatches(productId, warehouseId, contractNo, containerNos, ownershipName, factoryNo, onlyAvailable);
   }
 
   @Override

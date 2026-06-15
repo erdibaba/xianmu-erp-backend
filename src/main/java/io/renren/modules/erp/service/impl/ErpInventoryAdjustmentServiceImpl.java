@@ -421,7 +421,7 @@ public class ErpInventoryAdjustmentServiceImpl implements ErpInventoryAdjustment
     List<ErpSpotInventoryVo> products = erpInventoryDao.querySpot(keyword, null, null, null, 0);
     LinkedHashMap<String, ErpInventoryBatchVo> lotMap = new LinkedHashMap<>();
     for (ErpSpotInventoryVo product : products) {
-      List<ErpInventoryBatchVo> batches = erpInventoryDao.querySpotBatches(product.getProductId(), null, null, null, 0);
+      List<ErpInventoryBatchVo> batches = erpInventoryDao.querySpotBatches(product.getProductId(), null, null, null, null, 0);
       for (ErpInventoryBatchVo batch : batches) {
         batch.setLotType("BASE");
         lotMap.put(baseKey(batch), copyLot(batch));

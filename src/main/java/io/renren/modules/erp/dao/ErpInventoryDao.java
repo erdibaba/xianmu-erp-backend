@@ -30,6 +30,7 @@ public interface ErpInventoryDao {
   List<ErpInventoryBatchVo> querySpotBatches(@Param("productId") Long productId,
                                              @Param("warehouseId") Long warehouseId,
                                              @Param("containerNos") List<String> containerNos,
+                                             @Param("ownershipName") String ownershipName,
                                              @Param("factoryNo") String factoryNo,
                                              @Param("onlyAvailable") Integer onlyAvailable);
 
@@ -37,6 +38,7 @@ public interface ErpInventoryDao {
                                                 @Param("warehouseId") Long warehouseId,
                                                 @Param("contractNo") String contractNo,
                                                 @Param("containerNos") List<String> containerNos,
+                                                @Param("ownershipName") String ownershipName,
                                                 @Param("factoryNo") String factoryNo,
                                                 @Param("onlyAvailable") Integer onlyAvailable);
 

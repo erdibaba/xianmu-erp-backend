@@ -24,6 +24,7 @@ public class ErpFuturesInventoryVo implements Serializable {
   private String productCode;
   private String productName;
   private String productNameEn;
+  private String ownershipName;
   private Integer futuresBoxes;
   private Integer futuresSoldBoxes;
   private Integer futuresAvailableBoxes;

@@ -2,6 +2,26 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="io.renren.modules.erp.dao.ErpInventoryDao">
 
+  <sql id="presaleOwnership">
+    (
+      SELECT
+        a.presale_order_id,
+        CASE
+          WHEN MAX(CASE WHEN fp.payment_type = 1 AND COALESCE(fl.status, 0) != 1 THEN 1 ELSE 0 END) = 1
+            THEN CONCAT('资方-', COALESCE(MAX(CASE
+              WHEN fp.payment_type = 1 AND COALESCE(fl.status, 0) != 1 THEN COALESCE(fl.funder_name, fp.funder_name)
+              ELSE NULL
+            END), '未知资方'))
+          WHEN MAX(CASE WHEN fp.payment_type IN (1, 2) THEN 1 ELSE 0 END) = 1 THEN '鲜牧'
+          ELSE '未确认'
+        END AS ownership_name
+      FROM erp_funder_payment_allocation a
+      INNER JOIN erp_funder_payment fp ON fp.id = a.payment_id
+      LEFT JOIN erp_funder_loan fl ON fl.allocation_id = a.id
+      GROUP BY a.presale_order_id
+    )
+  </sql>
+
   <select id="querySummary" resultType="io.renren.modules.erp.vo.ErpInventorySummaryVo">
     SELECT
       l.product_id AS productId,
@@ -46,6 +66,7 @@
       i.product_code AS productCode,
       i.product_name AS productName,
       i.product_name_en AS productNameEn,
+      COALESCE(owner.ownership_name, '未确认') AS ownershipName,
       MAX(i.product_spec) AS productSpec,
       MAX(i.unit) AS unit,
       SUM(COALESCE(i.expected_qty, 0)) AS expectedBoxes,
@@ -68,6 +89,7 @@
     FROM erp_inbound_order_item i
     INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
     LEFT JOIN erp_product p ON p.id = i.product_id
+    LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = io.presale_order_id
     LEFT JOIN (
       SELECT
         soi.source_inbound_item_id,
@@ -147,7 +169,7 @@
           AND pi_filter.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
       )
     </if>
-    GROUP BY i.product_id, i.product_code, i.product_name, i.product_name_en
+    GROUP BY i.product_id, i.product_code, i.product_name, i.product_name_en, COALESCE(owner.ownership_name, '未确认')
     <if test="onlyAvailable != null and onlyAvailable == 1">
       HAVING SUM(COALESCE(i.actual_qty, 0)) - SUM(COALESCE(alloc.allocated_boxes, 0)) &gt; 0
     </if>
@@ -172,6 +194,7 @@
         calc.productCode,
         calc.productName,
         calc.productNameEn,
+        calc.ownershipName,
         calc.productSpec,
         calc.factoryNo,
         calc.skuCode,
@@ -223,6 +246,7 @@
             i.product_code AS productCode,
             i.product_name AS productName,
             i.product_name_en AS productNameEn,
+            COALESCE(owner.ownership_name, '未确认') AS ownershipName,
             i.product_spec AS productSpec,
             pi.factory_no AS factoryNo,
             i.sku_code AS skuCode,
@@ -272,6 +296,7 @@
           INNER JOIN erp_presale_packing_batch b ON b.packing_item_id = pi.id
           LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
+          LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = io.presale_order_id
           LEFT JOIN (
             SELECT
               soi.source_inbound_item_id,
@@ -325,6 +350,7 @@
             i.product_code AS productCode,
             i.product_name AS productName,
             i.product_name_en AS productNameEn,
+            COALESCE(owner.ownership_name, '未确认') AS ownershipName,
             i.product_spec AS productSpec,
             pack.factory_no AS factoryNo,
             i.sku_code AS skuCode,
@@ -344,6 +370,7 @@
           INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
           LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
+          LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = io.presale_order_id
           LEFT JOIN (
             SELECT
               i2.id AS inbound_item_id,
@@ -410,6 +437,9 @@
     <if test="factoryNo != null and factoryNo != ''">
       AND detail.factoryNo LIKE CONCAT('%', #{factoryNo}, '%')
     </if>
+    <if test="ownershipName != null and ownershipName != ''">
+      AND detail.ownershipName = #{ownershipName}
+    </if>
     <if test="onlyAvailable != null and onlyAvailable == 1">
       AND detail.availableBoxes &gt; 0
     </if>
@@ -425,6 +455,7 @@
       pi.product_code AS productCode,
       pi.product_name AS productName,
       pi.product_name_en AS productNameEn,
+      COALESCE(owner.ownership_name, '未确认') AS ownershipName,
       SUM(COALESCE(pi.total_boxes, 0)) AS futuresBoxes,
       SUM(COALESCE(sold.sold_boxes, 0)) AS futuresSoldBoxes,
       GREATEST(SUM(COALESCE(pi.total_boxes, 0)) - SUM(COALESCE(sold.sold_boxes, 0)), 0) AS futuresAvailableBoxes,
@@ -444,6 +475,7 @@
     INNER JOIN erp_presale_order po ON po.id = pp.presale_order_id
     LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = po.id
     LEFT JOIN erp_product p ON p.id = pi.product_id
+    LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = po.id
     LEFT JOIN (
       SELECT packing_item_id, MIN(production_date) AS production_date, MIN(expiry_date) AS expiry_date
       FROM erp_presale_packing_batch
@@ -500,7 +532,7 @@
     <if test="factoryNo != null and factoryNo != ''">
       AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
     </if>
-    GROUP BY pi.product_id, pi.product_code, pi.product_name, pi.product_name_en
+    GROUP BY pi.product_id, pi.product_code, pi.product_name, pi.product_name_en, COALESCE(owner.ownership_name, '未确认')
     <if test="onlyAvailable != null and onlyAvailable == 1">
       HAVING GREATEST(SUM(COALESCE(pi.total_boxes, 0)) - SUM(COALESCE(sold.sold_boxes, 0)), 0) &gt; 0
     </if>
@@ -522,6 +554,7 @@
       pi.product_code AS productCode,
       pi.product_name AS productName,
       pi.product_name_en AS productNameEn,
+      COALESCE(owner.ownership_name, '未确认') AS ownershipName,
       pi.factory_no AS factoryNo,
       b.production_date AS productionDate,
       b.expiry_date AS expiryDate,
@@ -547,6 +580,7 @@
     LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = po.id
     INNER JOIN erp_presale_packing_batch b ON b.packing_item_id = pi.id
     LEFT JOIN erp_product p ON p.id = pi.product_id
+    LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = po.id
     LEFT JOIN (
       SELECT
         soi.source_presale_order_id,
@@ -590,6 +624,9 @@
     </if>
     <if test="factoryNo != null and factoryNo != ''">
       AND pi.factory_no LIKE CONCAT('%', #{factoryNo}, '%')
+    </if>
+    <if test="ownershipName != null and ownershipName != ''">
+      AND COALESCE(owner.ownership_name, '未确认') = #{ownershipName}
     </if>
     <if test="onlyAvailable != null and onlyAvailable == 1">
       AND GREATEST(COALESCE(pi.total_boxes, 0) - COALESCE(sold.sold_boxes, 0), 0) &gt; 0

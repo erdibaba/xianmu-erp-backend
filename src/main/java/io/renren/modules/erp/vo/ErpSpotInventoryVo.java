@@ -21,6 +21,7 @@ public class ErpSpotInventoryVo implements Serializable {
   private String productCode;
   private String productName;
   private String productNameEn;
+  private String ownershipName;
   private String productSpec;
   private String unit;
   private String temperatureZone;
