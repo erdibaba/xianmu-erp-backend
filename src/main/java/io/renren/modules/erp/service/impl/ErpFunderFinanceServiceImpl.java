@@ -112,10 +112,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   public ErpFunderPaymentEntity getPaymentDetail(Long id) {
     ErpFunderPaymentEntity payment = paymentDao.selectById(id);
     if (payment != null) {
-      payment.setAllocationList(allocationDao.selectList(
+      List<ErpFunderPaymentAllocationEntity> allocationList = allocationDao.selectList(
           new QueryWrapper<ErpFunderPaymentAllocationEntity>()
               .eq("payment_id", id)
-              .orderByAsc("id")));
+              .orderByAsc("id"));
+      fillOrderContractAmount(allocationList);
+      payment.setAllocationList(allocationList);
     }
     return payment;
   }
@@ -665,6 +667,23 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       throw new RuntimeException("所选预销售单的客户订单确认函总金额为空或为0，不能进行鲜牧全款打款");
     }
     return totalAmount;
+  }
+
+  private void fillOrderContractAmount(List<ErpFunderPaymentAllocationEntity> allocationList) {
+    if (allocationList == null || allocationList.isEmpty()) {
+      return;
+    }
+    for (ErpFunderPaymentAllocationEntity allocation : allocationList) {
+      if (allocation.getPresaleOrderId() == null) {
+        continue;
+      }
+      ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectOne(new QueryWrapper<ErpPresaleConfirmEntity>()
+          .eq("presale_order_id", allocation.getPresaleOrderId())
+          .last("limit 1"));
+      if (confirm != null && confirm.getTotalAmount() != null) {
+        allocation.setOrderContractAmount(money(confirm.getTotalAmount()));
+      }
+    }
   }
 
   private void validateXianmuContribution(ErpFunderPaymentAllocationEntity allocation) {

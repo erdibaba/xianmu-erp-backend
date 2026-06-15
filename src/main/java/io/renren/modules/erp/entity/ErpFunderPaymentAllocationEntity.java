@@ -1,6 +1,7 @@
 package io.renren.modules.erp.entity;
 
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import java.io.Serializable;
@@ -19,6 +20,8 @@ public class ErpFunderPaymentAllocationEntity implements Serializable {
   private Long presaleOrderId;
   private String presaleOrderNo;
   private String sellerContractNo;
+  @TableField(exist = false)
+  private BigDecimal orderContractAmount;
   private BigDecimal allocationAmount;
   private BigDecimal xianmuContributionRecognizedAmount;
   private BigDecimal xianmuContributionModifiedAmount;
