@@ -67,6 +67,7 @@ import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
+import io.renren.modules.erp.service.ErpExpenseService;
 import io.renren.modules.erp.service.ErpOcrService;
 import io.renren.modules.erp.service.ErpWecomService;
 import io.renren.modules.erp.vo.ErpRecognizeResultVo;
@@ -184,6 +185,8 @@ implements ErpSaleOrderService {
     private ErpSaleUploadNoticeDao erpSaleUploadNoticeDao;
     @Autowired
     private ErpOcrService erpOcrService;
+    @Autowired
+    private ErpExpenseService erpExpenseService;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -636,6 +639,7 @@ implements ErpSaleOrderService {
         batch.setConfirmTime(now);
         batch.setUpdateTime(now);
         this.erpSaleOutboundBatchDao.updateById(batch);
+        this.erpExpenseService.regenerateOutboundStorageExpense(batch.getId(), userId);
         this.refreshOutboundReceiptOrderConfirmed(batch.getSaleOrderId());
         this.refreshOrderStatus(batch.getSaleOrderId());
         return this.loadOutboundBatch(batchId);
@@ -2058,6 +2062,7 @@ implements ErpSaleOrderService {
                 this.deleteFileRecord(file);
             }
         }
+        this.erpExpenseService.deleteBySource(ErpExpenseService.TYPE_OUTBOUND_STORAGE, ErpExpenseService.SOURCE_OUTBOUND_BATCH, batchId);
         this.erpSaleOutboundBatchDao.deleteById(batchId);
     }
 
@@ -2077,6 +2082,7 @@ implements ErpSaleOrderService {
         fileWrapper.orderByAsc("line_no", "id");
         List<ErpSaleOrderFileEntity> receiptFiles = this.erpSaleOrderFileDao.selectList((Wrapper)fileWrapper);
         batch.setReceiptFileList(receiptFiles == null ? new ArrayList<ErpSaleOrderFileEntity>() : receiptFiles);
+        batch.setExpenseList(this.erpExpenseService.listBySource(ErpExpenseService.SOURCE_OUTBOUND_BATCH, batch.getId()));
     }
 
     private ErpSaleOutboundScanEntity loadOutboundScanByBatch(Long batchId) {

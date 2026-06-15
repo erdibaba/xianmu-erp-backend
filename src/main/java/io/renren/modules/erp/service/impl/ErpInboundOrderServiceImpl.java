@@ -25,6 +25,7 @@ import io.renren.modules.erp.entity.ErpPresalePackingEntity;
 import io.renren.modules.erp.entity.ErpPresalePackingItemEntity;
 import io.renren.modules.erp.entity.ErpProductEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
+import io.renren.modules.erp.service.ErpExpenseService;
 import io.renren.modules.erp.service.ErpInboundOrderService;
 import io.renren.modules.erp.vo.ErpInboundListVo;
 import io.renren.modules.erp.vo.ErpRecognizedInboundDraftVo;
@@ -87,6 +88,8 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   private ErpProductDao erpProductDao;
   @Autowired
   private ErpWarehouseDao erpWarehouseDao;
+  @Autowired
+  private ErpExpenseService erpExpenseService;
 
   @Override
   public PageUtils queryPage(Map<String, Object> params) {
@@ -242,6 +245,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     }
     saveItems(order, now);
     saveFiles(order, now);
+    erpExpenseService.regenerateInboundHandlingExpense(order, userId);
   }
 
   private void normalizeOrder(ErpInboundOrderEntity order, Long userId, Date now, boolean create) {
@@ -348,6 +352,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
         new QueryWrapper<ErpInboundOrderItemEntity>().eq("inbound_order_id", inbound.getId()).orderByAsc("line_no", "id")));
     inbound.setFileList(erpInboundOrderFileDao.selectList(
         new QueryWrapper<ErpInboundOrderFileEntity>().eq("inbound_order_id", inbound.getId()).orderByAsc("line_no", "id")));
+    inbound.setExpenseList(erpExpenseService.listBySource(ErpExpenseService.SOURCE_INBOUND_ORDER, inbound.getId()));
   }
 
   private ErpInboundOrderEntity buildDefaultOrder(Long presaleOrderId) {

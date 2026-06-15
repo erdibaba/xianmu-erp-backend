@@ -44,5 +44,8 @@ public class ErpInboundOrderEntity implements Serializable {
   private List<ErpInboundOrderFileEntity> fileList;
 
   @TableField(exist = false)
+  private List<ErpExpenseEntity> expenseList;
+
+  @TableField(exist = false)
   private Integer uploadStatus;
 }
