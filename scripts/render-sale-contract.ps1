@@ -87,21 +87,22 @@ try {
     $sheet.Cells.Item($rowIndex, 1).Value2 = [string]$row.contractNo
     $sheet.Cells.Item($rowIndex, 2).Value2 = [string]$row.factoryNo
     $sheet.Cells.Item($rowIndex, 3).Value2 = [string]$row.containerNo
-    $sheet.Cells.Item($rowIndex, 4).Value2 = [string]$row.productName
-    $sheet.Cells.Item($rowIndex, 5).Value2 = [int]$row.boxes
-    $sheet.Cells.Item($rowIndex, 6).Value2 = [double]$row.quantityKg
-    $sheet.Cells.Item($rowIndex, 7).Value2 = [double]$row.salePriceKg
-    $sheet.Cells.Item($rowIndex, 11).NumberFormat = '@'
-    $sheet.Cells.Item($rowIndex, 11).Value2 = [string]$row.portCold
-    $sheet.Cells.Item($rowIndex, 12).Value2 = [string]$row.arrivalText
-    $sheet.Cells.Item($rowIndex, 8).Formula = "=J$rowIndex/1.09"
-    $sheet.Cells.Item($rowIndex, 9).Formula = "=H$rowIndex*0.09"
-    $sheet.Cells.Item($rowIndex, 10).Formula = "=F$rowIndex*G$rowIndex"
+    $sheet.Cells.Item($rowIndex, 4).Value2 = [string]$row.productCode
+    $sheet.Cells.Item($rowIndex, 5).Value2 = [string]$row.productName
+    $sheet.Cells.Item($rowIndex, 6).Value2 = [int]$row.boxes
+    $sheet.Cells.Item($rowIndex, 7).Value2 = [double]$row.quantityKg
+    $sheet.Cells.Item($rowIndex, 8).Value2 = [double]$row.salePriceKg
+    $sheet.Cells.Item($rowIndex, 12).NumberFormat = '@'
+    $sheet.Cells.Item($rowIndex, 12).Value2 = [string]$row.portCold
+    $sheet.Cells.Item($rowIndex, 13).Value2 = [string]$row.arrivalText
+    $sheet.Cells.Item($rowIndex, 9).Formula = "=K$rowIndex/1.09"
+    $sheet.Cells.Item($rowIndex, 10).Formula = "=I$rowIndex*0.09"
+    $sheet.Cells.Item($rowIndex, 11).Formula = "=G$rowIndex*H$rowIndex"
 
     $contractCell = $sheet.Cells.Item($rowIndex, 1)
     $contractCell.WrapText = $true
     $contractCell.ShrinkToFit = $false
-    $productCell = $sheet.Cells.Item($rowIndex, 4)
+    $productCell = $sheet.Cells.Item($rowIndex, 5)
     $productCell.WrapText = $true
     $productCell.ShrinkToFit = $false
     $sheet.Rows.Item($rowIndex).VerticalAlignment = -4160
@@ -118,13 +119,13 @@ try {
     }
   }
 
-  $sheet.Cells.Item($totalRow, 5).Formula = ('=SUM(E{0}:E{1})' -f $dataStartRow, $dataEndRow)
   $sheet.Cells.Item($totalRow, 6).Formula = ('=SUM(F{0}:F{1})' -f $dataStartRow, $dataEndRow)
-  $sheet.Cells.Item($totalRow, 10).Formula = ('=SUM(J{0}:J{1})' -f $dataStartRow, $dataEndRow)
-  $sheet.Cells.Item($amountRow, 2).Formula = "=J$totalRow"
+  $sheet.Cells.Item($totalRow, 7).Formula = ('=SUM(G{0}:G{1})' -f $dataStartRow, $dataEndRow)
+  $sheet.Cells.Item($totalRow, 11).Formula = ('=SUM(K{0}:K{1})' -f $dataStartRow, $dataEndRow)
+  $sheet.Cells.Item($amountRow, 2).Formula = "=K$totalRow"
   $sheet.Cells.Item($spotFeeHeaderRow, 3).Value2 = $coldStorageFreeText
-  $sheet.Cells.Item($spotFeeValueRow, 4).Value2 = [int]$coldStorageFreeDays
-  $sheet.Cells.Item($spotFeeHeaderRow, 5).Value2 = $spotFeeRangeText
+  $sheet.Cells.Item($spotFeeValueRow, 5).Value2 = [int]$coldStorageFreeDays
+  $sheet.Cells.Item($spotFeeHeaderRow, 7).Value2 = $spotFeeRangeText
   $sheet.Cells.Item($bottomPartyRow, 7).Value2 = ('           ' + ([string][char]0x4E59) + ([string][char]0x65B9) + ':' + [string]$payload.secondaryPartnerName)
 
   if (-not [string]::IsNullOrWhiteSpace($StampPath) -and (Test-Path -LiteralPath $StampPath)) {

@@ -950,6 +950,7 @@ implements ErpSaleOrderService {
             row.put("contractNo", this.firstNonBlank(order.getContractNo(), order.getOrderNo(), "-"));
             row.put("factoryNo", StringUtils.trimToEmpty((String)item.getContractFactoryNo()));
             row.put("containerNo", SALE_TYPE_SPOT.equals(order.getSaleType()) ? this.firstNonBlank(item.getSourceContainerNo(), "") : "");
+            row.put("productCode", this.firstNonBlank(item.getProductCode(), ""));
             row.put("productName", this.firstNonBlank(item.getProductName(), item.getProductNameEn(), "-"));
             row.put("boxes", item.getBoxes());
             row.put("quantityKg", item.getContractQuantityKg().setScale(2, RoundingMode.HALF_UP));
