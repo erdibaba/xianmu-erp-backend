@@ -34,4 +34,6 @@ public interface ErpPresaleOrderService {
   ResponseEntity<byte[]> downloadPackingFile(Long id);
 
   ResponseEntity<byte[]> downloadAttachmentFile(Long id, String attachmentType);
+
+  ResponseEntity<byte[]> downloadAttachmentFileById(Long attachmentId);
 }

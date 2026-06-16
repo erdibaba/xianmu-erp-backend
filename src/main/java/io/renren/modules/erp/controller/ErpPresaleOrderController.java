@@ -118,4 +118,10 @@ public class ErpPresaleOrderController extends AbstractController {
   public ResponseEntity<byte[]> downloadQuarantine(@PathVariable("id") Long id) {
     return erpPresaleOrderService.downloadAttachmentFile(id, "QUARANTINE");
   }
+
+  @GetMapping("/download/attachment/{attachmentId}")
+  @RequiresPermissions("erp:tradeorder:info")
+  public ResponseEntity<byte[]> downloadAttachment(@PathVariable("attachmentId") Long attachmentId) {
+    return erpPresaleOrderService.downloadAttachmentFileById(attachmentId);
+  }
 }

@@ -132,12 +132,14 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     }
     entity.setConfirmInfo(confirm);
     entity.setPackingInfo(packing);
+    List<ErpPresaleAttachmentEntity> quarantineList = listAttachments(id, "QUARANTINE");
     entity.setCustomsInfo(findAttachment(id, "CUSTOMS"));
-    entity.setQuarantineInfo(findAttachment(id, "QUARANTINE"));
+    entity.setQuarantineInfo(quarantineList.isEmpty() ? null : quarantineList.get(0));
+    entity.setQuarantineList(quarantineList);
     entity.setConfirmUploaded(confirm == null ? 0 : 1);
     entity.setPackingUploaded(packing == null ? 0 : 1);
     entity.setCustomsUploaded(entity.getCustomsInfo() == null ? 0 : 1);
-    entity.setQuarantineUploaded(entity.getQuarantineInfo() == null ? 0 : 1);
+    entity.setQuarantineUploaded(quarantineList.isEmpty() ? 0 : 1);
     return entity;
   }
 
@@ -256,7 +258,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     try {
       file.transferTo(tempFile.toFile());
       Path savedPath = saveAttachmentFile(file, tempFile, suffix, normalizedType);
-      ErpPresaleAttachmentEntity existing = findAttachment(presaleOrderId, normalizedType);
+      ErpPresaleAttachmentEntity existing = "QUARANTINE".equals(normalizedType) ? null : findAttachment(presaleOrderId, normalizedType);
       Date now = new Date();
       if (existing == null) {
         existing = new ErpPresaleAttachmentEntity();
@@ -302,6 +304,12 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   @Override
   public ResponseEntity<byte[]> downloadAttachmentFile(Long id, String attachmentType) {
     ErpPresaleAttachmentEntity attachment = findAttachment(id, attachmentType);
+    return downloadFile(attachment == null ? null : attachment.getFilePath(), attachment == null ? null : attachment.getFileName());
+  }
+
+  @Override
+  public ResponseEntity<byte[]> downloadAttachmentFileById(Long attachmentId) {
+    ErpPresaleAttachmentEntity attachment = erpPresaleAttachmentDao.selectById(attachmentId);
     return downloadFile(attachment == null ? null : attachment.getFilePath(), attachment == null ? null : attachment.getFileName());
   }
 
@@ -834,7 +842,15 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     return erpPresaleAttachmentDao.selectOne(new QueryWrapper<ErpPresaleAttachmentEntity>()
         .eq("presale_order_id", presaleOrderId)
         .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)))
+        .orderByDesc("id")
         .last("limit 1"));
+  }
+
+  private List<ErpPresaleAttachmentEntity> listAttachments(Long presaleOrderId, String attachmentType) {
+    return erpPresaleAttachmentDao.selectList(new QueryWrapper<ErpPresaleAttachmentEntity>()
+        .eq("presale_order_id", presaleOrderId)
+        .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)))
+        .orderByDesc("id"));
   }
 
   private String getSuffix(String filename) {

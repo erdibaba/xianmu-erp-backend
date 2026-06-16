@@ -55,6 +55,9 @@ public class ErpPresaleOrderEntity implements Serializable {
   private ErpPresaleAttachmentEntity quarantineInfo;
 
   @TableField(exist = false)
+  private List<ErpPresaleAttachmentEntity> quarantineList;
+
+  @TableField(exist = false)
   private Integer customsUploaded;
 
   @TableField(exist = false)
