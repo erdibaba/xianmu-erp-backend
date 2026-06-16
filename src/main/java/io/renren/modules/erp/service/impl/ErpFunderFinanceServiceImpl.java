@@ -67,6 +67,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       "(20\\d{2})(\\d{2})(\\d{2})(?:\\s+\\d{1,2}\\s*:\\s*\\d{1,2}(?:\\s*:\\s*\\d{1,2})?)?");
   private static final Pattern DECIMAL_AMOUNT_PATTERN = Pattern.compile(
       "(?<!\\d)([0-9]{1,3}(?:,[0-9]{3})+\\.[0-9]{2})(?!\\d)");
+  private static final Pattern OCR_DECIMAL_AMOUNT_PATTERN = Pattern.compile(
+      "(?<!\\d)([0-9]{1,3}(?:\\s*[,，]\\s*[0-9]{3})+\\s*[.。]\\s*[0-9]{2}|[0-9]{4,12}\\s*[.。]\\s*[0-9]{2})(?!\\d)");
 
   @Autowired
   private ErpFunderPaymentDao paymentDao;
@@ -778,24 +780,29 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       return null;
     }
     String nearbyText = StringUtils.substring(rawText, labelIndex, Math.min(rawText.length(), labelIndex + 180));
-    Matcher matcher = DECIMAL_AMOUNT_PATTERN.matcher(nearbyText);
+    Matcher matcher = OCR_DECIMAL_AMOUNT_PATTERN.matcher(nearbyText);
     if (!matcher.find()) {
       return null;
     }
-    try {
-      return money(new BigDecimal(matcher.group(1).replace(",", "")));
-    } catch (Exception ignored) {
-      return null;
-    }
+    return parseOcrAmount(matcher.group(1));
   }
 
   private BigDecimal extractFirstDecimalAmount(String rawText) {
-    Matcher matcher = DECIMAL_AMOUNT_PATTERN.matcher(StringUtils.defaultString(rawText));
+    Matcher matcher = OCR_DECIMAL_AMOUNT_PATTERN.matcher(StringUtils.defaultString(rawText));
     if (!matcher.find()) {
       return null;
     }
+    return parseOcrAmount(matcher.group(1));
+  }
+
+  private BigDecimal parseOcrAmount(String amountText) {
     try {
-      return money(new BigDecimal(matcher.group(1).replace(",", "")));
+      String normalized = StringUtils.defaultString(amountText)
+          .replaceAll("\\s+", "")
+          .replace(",", "")
+          .replace("，", "")
+          .replace("。", ".");
+      return money(new BigDecimal(normalized));
     } catch (Exception ignored) {
       return null;
     }
