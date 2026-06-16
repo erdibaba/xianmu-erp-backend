@@ -736,6 +736,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (bracketAmount != null) {
       return bracketAmount;
     }
+    BigDecimal chineseAmount = extractChineseRmbAmount(text);
+    if (chineseAmount != null) {
+      return chineseAmount;
+    }
     Matcher matcher = LABEL_AMOUNT_PATTERN.matcher(text);
     if (!matcher.find()) {
       matcher = CURRENCY_AMOUNT_PATTERN.matcher(text);
