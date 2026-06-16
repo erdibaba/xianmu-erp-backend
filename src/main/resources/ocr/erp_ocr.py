@@ -512,22 +512,9 @@ def parse_packing(text):
       item_match = re.match(r"^(?P<boxes>\d+)\s+CT\s+(?P<name>[A-Z0-9 \-]+?)\s+(?P<weight>[\d,]+\.\d+)Production Number\(s\)$", line)
       if item_match:
         name = item_match.group("name").strip()
-        batch_list = []
         line_total_boxes = dec(item_match.group("boxes")) or Decimal("0")
         line_total_weight = dec(item_match.group("weight").replace(",", "")) or Decimal("0.00")
-        if idx + 1 < len(lines):
-          batch_line = lines[idx + 1]
-          for box_count, production_date in re.findall(r"(\d+)\s+CT\s+(\d{4}-\d{2}-\d{2})", batch_line):
-            box_count_dec = dec(box_count) or Decimal("0")
-            weight = Decimal("0.00")
-            if line_total_boxes:
-              weight = (line_total_weight * box_count_dec / line_total_boxes).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            batch_list.append({
-              "productionDate": f"{production_date} 00:00:00",
-              "expiryDate": add_days(production_date, int(shelf_life_days or "0")),
-              "boxCount": box_count,
-              "weight": dec_str(weight, "0.00")
-            })
+        batch_list = parse_packing_batches_after_item(lines, idx, line_total_boxes, line_total_weight, shelf_life_days or "0")
         item_list.append({
           "productNameEn": name,
           "totalBoxes": str(int(line_total_boxes)),
@@ -561,6 +548,29 @@ def parse_packing(text):
         "itemList": item_list
       }
     }
+
+
+def is_packing_item_line(line):
+    return bool(re.match(r"^\d+\s+CT\s+[A-Z0-9 \-]+?\s+[\d,]+\.\d+Production Number\(s\)$", line or ""))
+
+
+def parse_packing_batches_after_item(lines, item_index, line_total_boxes, line_total_weight, shelf_life_days):
+    batch_list = []
+    for batch_line in lines[item_index + 1:item_index + 26]:
+      if is_packing_item_line(batch_line):
+        break
+      for box_count, production_date in re.findall(r"(\d+)\s+CT\s+(\d{4}-\d{2}-\d{2})", batch_line):
+        box_count_dec = dec(box_count) or Decimal("0")
+        weight = Decimal("0.00")
+        if line_total_boxes:
+          weight = (line_total_weight * box_count_dec / line_total_boxes).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        batch_list.append({
+          "productionDate": f"{production_date} 00:00:00",
+          "expiryDate": add_days(production_date, int(shelf_life_days or "0")),
+          "boxCount": box_count,
+          "weight": dec_str(weight, "0.00")
+        })
+    return batch_list
 
 
 def parse_packing_ocr_lines(lines, shelf_life_days):
