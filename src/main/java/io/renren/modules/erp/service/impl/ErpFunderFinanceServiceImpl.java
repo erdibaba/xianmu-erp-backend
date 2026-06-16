@@ -56,7 +56,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private static final int PAYMENT_TYPE_FUNDER = 1;
   private static final int PAYMENT_TYPE_XIANMU = 2;
   private static final Pattern LABEL_AMOUNT_PATTERN = Pattern.compile(
-      "(?:交易金额|付款金额|转账金额|打款金额|金额|人民币)\\s*[:：]?\\s*(?:CNY|RMB|￥|¥)?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)",
+      "(?:交易金额|付款金额|转账金额|打款金额|金额)\\s*[:：]?\\s*(?:CNY|RMB|￥|¥)?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)",
       Pattern.CASE_INSENSITIVE);
   private static final Pattern CURRENCY_AMOUNT_PATTERN = Pattern.compile(
       "(?:CNY|RMB|￥|¥)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)",
@@ -919,7 +919,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     receipt.put("purpose", firstValueAfterAnyMarker(lines, "用途"));
     receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要"));
     BigDecimal amount = extractCibAmount(text);
-    receipt.put("recognizedAmount", amount == null ? extractAmount(text) : amount);
+    receipt.put("recognizedAmount", amount == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : amount);
     receipt.put("paymentDate", extractDate(text));
     return receipt;
   }
