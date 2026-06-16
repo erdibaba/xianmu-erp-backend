@@ -634,6 +634,29 @@ def is_packing_pdf(text):
     return "STATEMENT OF PRODUCTION DATES" in text.upper()
 
 
+def is_purchase_confirmation_like(text):
+    upper_text = (text or "").upper()
+    return (
+        "CUSTOMER SALES ORDER CONFIRMATION" in upper_text
+        or "PAYMENT NOTICE" in upper_text
+        or "\u5ba2\u6237\u8ba2\u5355\u786e\u8ba4\u51fd" in (text or "")
+        or "\u4ed8\u6b3e\u901a\u77e5\u4e66" in (text or "")
+        or "\u5b58\u8d27\u7f16\u7801" in (text or "")
+    )
+
+
+def packing_type_mismatch_result(text):
+    return {
+        "success": False,
+        "docType": "PURCHASE_CONFIRMATION",
+        "message": "\u5f53\u524d\u6587\u4ef6\u8bc6\u522b\u4e3a\u5ba2\u6237\u8ba2\u5355\u786e\u8ba4\u51fd/\u4ed8\u6b3e\u901a\u77e5\u4e66\uff0c\u4e0d\u662f\u88c5\u7bb1\u5355\uff0c\u8bf7\u5230\u5ba2\u6237\u8ba2\u5355\u786e\u8ba4\u51fd\u5165\u53e3\u4e0a\u4f20\u3002",
+        "rawText": text,
+        "packingDraft": {
+            "itemList": []
+        }
+    }
+
+
 def recognize(file_path, order_type_hint=None):
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -642,6 +665,8 @@ def recognize(file_path, order_type_hint=None):
         if not text.strip():
             _, lines = load_pdf_image_items(path)
             text = "\n".join(lines)
+        if order_type_hint == "PACKING" and not is_packing_pdf(text) and is_purchase_confirmation_like(text):
+            return packing_type_mismatch_result(text)
         if is_packing_pdf(text) or order_type_hint == "PACKING":
             result = parse_packing(text)
         elif is_presale_pdf(text):
@@ -655,6 +680,8 @@ def recognize(file_path, order_type_hint=None):
             ocr_text = "\n".join(lines)
             if ocr_text.strip() and ocr_text != text:
                 text = ocr_text
+                if not is_packing_pdf(text) and is_purchase_confirmation_like(text):
+                    return packing_type_mismatch_result(text)
                 result = parse_packing(text)
         result["rawText"] = text
         return result
@@ -662,6 +689,8 @@ def recognize(file_path, order_type_hint=None):
     items, lines = load_image_items(path)
     text = "\n".join(lines)
     upper_text = text.upper()
+    if order_type_hint == "PACKING" and "STATEMENT OF PRODUCTION DATES" not in upper_text and is_purchase_confirmation_like(text):
+        return packing_type_mismatch_result(text)
     if order_type_hint == "PACKING" or "STATEMENT OF PRODUCTION DATES" in upper_text:
         result = parse_packing(text)
     elif order_type_hint == "PURCHASE" or KW_CONFIRM in text or "CUSTOMER SALES ORDER CONFIRMATION" in upper_text:
@@ -680,7 +709,7 @@ def main():
     order_type_hint = sys.argv[2] if len(sys.argv) > 2 else None
     try:
         result = recognize(file_path, order_type_hint)
-        result["success"] = True
+        result["success"] = bool(result.get("success", True))
         print(json.dumps(result, ensure_ascii=False))
     except Exception as exc:
         print(json.dumps({"success": False, "message": str(exc)}, ensure_ascii=False))

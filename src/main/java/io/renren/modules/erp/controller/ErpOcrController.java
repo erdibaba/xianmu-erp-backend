@@ -23,14 +23,17 @@ public class ErpOcrController {
   public R recognize(@RequestParam("file") MultipartFile file,
                      @RequestParam(value = "orderTypeHint", required = false) String orderTypeHint) throws Exception {
     if (file == null || file.isEmpty()) {
-      return R.error("请上传单据图片或 PDF");
+      return R.error("\u8bf7\u4e0a\u4f20\u5355\u636e\u56fe\u7247\u6216 PDF");
     }
     String filename = StringUtils.defaultString(file.getOriginalFilename()).toLowerCase();
     if (!(filename.endsWith(".jpg") || filename.endsWith(".jpeg") || filename.endsWith(".png")
         || filename.endsWith(".jfif") || filename.endsWith(".bmp") || filename.endsWith(".pdf"))) {
-      return R.error("仅支持 jpg/jpeg/png/jfif/bmp/pdf");
+      return R.error("\u4ec5\u652f\u6301 jpg/jpeg/png/jfif/bmp/pdf");
     }
     ErpRecognizeResultVo result = erpOcrService.recognize(file, orderTypeHint);
+    if (Boolean.FALSE.equals(result.getSuccess())) {
+      return R.error(StringUtils.defaultIfBlank(result.getMessage(), "\u8bc6\u522b\u5931\u8d25"));
+    }
     return R.ok().put("result", result);
   }
 }
