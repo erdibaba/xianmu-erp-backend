@@ -940,7 +940,113 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (amount != null) {
       return amount;
     }
+    amount = extractChineseRmbAmount(text);
+    if (amount != null) {
+      return amount;
+    }
     return extractFirstDecimalAmount(text);
+  }
+
+  private BigDecimal extractChineseRmbAmount(String text) {
+    Matcher matcher = Pattern.compile("([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九十拾佰百仟千万亿]+)元").matcher(StringUtils.defaultString(text));
+    if (!matcher.find()) {
+      return null;
+    }
+    Long amount = parseChineseIntegerAmount(matcher.group(1));
+    return amount == null ? null : BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP);
+  }
+
+  private Long parseChineseIntegerAmount(String value) {
+    if (StringUtils.isBlank(value)) {
+      return null;
+    }
+    long total = 0L;
+    long section = 0L;
+    long number = 0L;
+    boolean found = false;
+    for (int i = 0; i < value.length(); i++) {
+      char ch = value.charAt(i);
+      Integer digit = chineseDigit(ch);
+      if (digit != null) {
+        number = digit;
+        found = true;
+        continue;
+      }
+      long unit = chineseUnit(ch);
+      if (unit == 0L) {
+        continue;
+      }
+      found = true;
+      if (unit < 10000L) {
+        section += (number == 0L ? 1L : number) * unit;
+      } else {
+        section = (section + number) * unit;
+        total += section;
+        section = 0L;
+      }
+      number = 0L;
+    }
+    if (!found) {
+      return null;
+    }
+    return total + section + number;
+  }
+
+  private Integer chineseDigit(char ch) {
+    switch (ch) {
+      case '零':
+      case '〇':
+        return 0;
+      case '壹':
+      case '一':
+        return 1;
+      case '贰':
+      case '二':
+        return 2;
+      case '叁':
+      case '三':
+        return 3;
+      case '肆':
+      case '四':
+        return 4;
+      case '伍':
+      case '五':
+        return 5;
+      case '陆':
+      case '六':
+        return 6;
+      case '柒':
+      case '七':
+        return 7;
+      case '捌':
+      case '八':
+        return 8;
+      case '玖':
+      case '九':
+        return 9;
+      default:
+        return null;
+    }
+  }
+
+  private long chineseUnit(char ch) {
+    switch (ch) {
+      case '十':
+      case '拾':
+        return 10L;
+      case '佰':
+      case '百':
+        return 100L;
+      case '仟':
+      case '千':
+        return 1000L;
+      case '万':
+        return 10000L;
+      case '亿':
+        return 100000000L;
+      default:
+        return 0L;
+    }
   }
 
   private Map<String, Object> extractAdbcReceipt(String rawText) {
