@@ -36,5 +36,7 @@ public interface ErpFunderFinanceService {
 
   ResponseEntity<byte[]> downloadPaymentVoucher(Long id);
 
+  ResponseEntity<byte[]> downloadContributionVoucher(Long allocationId);
+
   ResponseEntity<byte[]> downloadRepaymentVoucher(Long id);
 }

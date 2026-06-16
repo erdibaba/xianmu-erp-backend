@@ -454,6 +454,13 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   @Override
+  public ResponseEntity<byte[]> downloadContributionVoucher(Long allocationId) {
+    ErpFunderPaymentAllocationEntity allocation = allocationDao.selectById(allocationId);
+    return download(allocation == null ? null : allocation.getXianmuContributionFilePath(),
+        allocation == null ? null : allocation.getXianmuContributionFileName());
+  }
+
+  @Override
   public ResponseEntity<byte[]> downloadRepaymentVoucher(Long id) {
     ErpFunderLoanRepaymentEntity repayment = repaymentDao.selectById(id);
     return download(repayment == null ? null : repayment.getFilePath(), repayment == null ? null : repayment.getFileName());

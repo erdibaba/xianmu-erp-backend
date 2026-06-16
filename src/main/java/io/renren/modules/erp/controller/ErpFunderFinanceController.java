@@ -96,6 +96,12 @@ public class ErpFunderFinanceController extends AbstractController {
     return funderFinanceService.downloadPaymentVoucher(id);
   }
 
+  @GetMapping("/allocation/download/contribution/{allocationId}")
+  @RequiresPermissions("erp:funderpayment:list")
+  public ResponseEntity<byte[]> downloadContribution(@PathVariable("allocationId") Long allocationId) {
+    return funderFinanceService.downloadContributionVoucher(allocationId);
+  }
+
   @GetMapping("/repayment/download/{id}")
   @RequiresPermissions("erp:funderloan:list")
   public ResponseEntity<byte[]> downloadRepayment(@PathVariable("id") Long id) {
