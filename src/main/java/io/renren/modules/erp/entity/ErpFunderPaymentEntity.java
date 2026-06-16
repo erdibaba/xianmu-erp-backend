@@ -37,5 +37,8 @@ public class ErpFunderPaymentEntity implements Serializable {
   private Date updateTime;
 
   @TableField(exist = false)
+  private String sellerContractNos;
+
+  @TableField(exist = false)
   private List<ErpFunderPaymentAllocationEntity> allocationList;
 }

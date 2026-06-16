@@ -107,7 +107,48 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     IPage<ErpFunderPaymentEntity> page = paymentDao.selectPage(
         new Query<ErpFunderPaymentEntity>().getPage(params), wrapper);
+    fillSellerContractNos(page.getRecords());
     return new PageUtils(page);
+  }
+
+  private void fillSellerContractNos(List<ErpFunderPaymentEntity> paymentList) {
+    if (paymentList == null || paymentList.isEmpty()) {
+      return;
+    }
+    List<Long> paymentIds = new ArrayList<Long>();
+    for (ErpFunderPaymentEntity payment : paymentList) {
+      if (payment != null && payment.getId() != null) {
+        paymentIds.add(payment.getId());
+      }
+    }
+    if (paymentIds.isEmpty()) {
+      return;
+    }
+    List<ErpFunderPaymentAllocationEntity> allocationList = allocationDao.selectList(
+        new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+            .in("payment_id", paymentIds)
+            .orderByAsc("id"));
+    Map<Long, List<String>> contractMap = new HashMap<Long, List<String>>();
+    for (ErpFunderPaymentAllocationEntity allocation : allocationList) {
+      if (allocation == null || allocation.getPaymentId() == null
+          || StringUtils.isBlank(allocation.getSellerContractNo())) {
+        continue;
+      }
+      List<String> contracts = contractMap.get(allocation.getPaymentId());
+      if (contracts == null) {
+        contracts = new ArrayList<String>();
+        contractMap.put(allocation.getPaymentId(), contracts);
+      }
+      if (!contracts.contains(allocation.getSellerContractNo())) {
+        contracts.add(allocation.getSellerContractNo());
+      }
+    }
+    for (ErpFunderPaymentEntity payment : paymentList) {
+      List<String> contracts = payment == null ? null : contractMap.get(payment.getId());
+      if (contracts != null && !contracts.isEmpty()) {
+        payment.setSellerContractNos(StringUtils.join(contracts, ", "));
+      }
+    }
   }
 
   @Override
