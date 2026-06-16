@@ -789,6 +789,18 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
   }
 
+  private BigDecimal extractFirstDecimalAmount(String rawText) {
+    Matcher matcher = DECIMAL_AMOUNT_PATTERN.matcher(StringUtils.defaultString(rawText));
+    if (!matcher.find()) {
+      return null;
+    }
+    try {
+      return money(new BigDecimal(matcher.group(1).replace(",", "")));
+    } catch (Exception ignored) {
+      return null;
+    }
+  }
+
   private Map<String, Object> extractBankReceipt(String rawText) {
     String text = StringUtils.defaultString(rawText);
     if (StringUtils.contains(text, "建设银行")) {
@@ -906,10 +918,22 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     putPartyValues(receipt, valuesAfterAnyMarker(lines, 2, "付款银行", "收款银行"), "payerBank", "payeeBank");
     receipt.put("purpose", firstValueAfterAnyMarker(lines, "用途"));
     receipt.put("summary", firstValueAfterAnyMarker(lines, "摘要"));
-    BigDecimal amount = extractAmountNearLabel(text, "写");
+    BigDecimal amount = extractCibAmount(text);
     receipt.put("recognizedAmount", amount == null ? extractAmount(text) : amount);
     receipt.put("paymentDate", extractDate(text));
     return receipt;
+  }
+
+  private BigDecimal extractCibAmount(String text) {
+    BigDecimal amount = extractAmountNearLabel(text, "小写");
+    if (amount != null) {
+      return amount;
+    }
+    amount = extractAmountNearLabel(text, "写");
+    if (amount != null) {
+      return amount;
+    }
+    return extractFirstDecimalAmount(text);
   }
 
   private Map<String, Object> extractAdbcReceipt(String rawText) {
