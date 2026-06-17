@@ -101,11 +101,15 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   }
 
   @Override
-  public ErpInboundOrderEntity getDetail(Long presaleOrderId) {
-    ErpInboundOrderEntity inbound = this.getOne(new QueryWrapper<ErpInboundOrderEntity>()
-        .eq("presale_order_id", presaleOrderId).last("limit 1"));
+  public ErpInboundOrderEntity getDetail(Long presaleOrderId, Long confirmId) {
+    QueryWrapper<ErpInboundOrderEntity> query = new QueryWrapper<ErpInboundOrderEntity>()
+        .eq("presale_order_id", presaleOrderId);
+    if (confirmId != null && confirmId > 0) {
+      query.eq("confirm_id", confirmId);
+    }
+    ErpInboundOrderEntity inbound = this.getOne(query.last("limit 1"));
     if (inbound == null) {
-      inbound = buildDefaultOrder(presaleOrderId);
+      inbound = buildDefaultOrder(presaleOrderId, confirmId);
       inbound.setUploadStatus(0);
       return inbound;
     }
@@ -150,7 +154,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   }
 
   @Override
-  public ErpRecognizedInboundResultVo recognize(Long presaleOrderId, MultipartFile[] files) throws Exception {
+  public ErpRecognizedInboundResultVo recognize(Long presaleOrderId, Long confirmId, MultipartFile[] files) throws Exception {
     if (files == null || files.length == 0) {
       throw new RuntimeException("请先上传入库单文件");
     }
@@ -204,7 +208,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
         throw new RuntimeException("入库单OCR结果为空");
       }
       result.setSuccess(Boolean.TRUE);
-      enrichDraft(presaleOrderId, result.getInboundDraft(), savedPaths);
+      enrichDraft(presaleOrderId, confirmId, result.getInboundDraft(), savedPaths);
       // The raw OCR dump is only used for debugging and can be very large. Returning it to
       // the browser makes the response unnecessarily heavy and increases the chance of the
       // client aborting the request before it finishes.
@@ -232,8 +236,12 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
       throw new RuntimeException("预销售单不能为空");
     }
     Date now = new Date();
-    ErpInboundOrderEntity existing = this.getOne(new QueryWrapper<ErpInboundOrderEntity>()
-        .eq("presale_order_id", order.getPresaleOrderId()).last("limit 1"));
+    QueryWrapper<ErpInboundOrderEntity> existingQuery = new QueryWrapper<ErpInboundOrderEntity>()
+        .eq("presale_order_id", order.getPresaleOrderId());
+    if (order.getConfirmId() != null && order.getConfirmId() > 0) {
+      existingQuery.eq("confirm_id", order.getConfirmId());
+    }
+    ErpInboundOrderEntity existing = this.getOne(existingQuery.last("limit 1"));
     normalizeOrder(order, userId, now, existing == null);
     if (existing == null) {
       this.save(order);
@@ -249,7 +257,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   }
 
   private void normalizeOrder(ErpInboundOrderEntity order, Long userId, Date now, boolean create) {
-    ErpInboundOrderEntity defaults = buildDefaultOrder(order.getPresaleOrderId());
+    ErpInboundOrderEntity defaults = buildDefaultOrder(order.getPresaleOrderId(), order.getConfirmId());
     if (order.getWarehouseId() == null || order.getWarehouseId() <= 0) {
       throw new RuntimeException("请选择仓库");
     }
@@ -258,6 +266,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
       throw new RuntimeException("所选仓库不存在");
     }
     order.setBrandId(order.getBrandId() == null ? defaults.getBrandId() : order.getBrandId());
+    order.setConfirmId(order.getConfirmId() == null ? defaults.getConfirmId() : order.getConfirmId());
     order.setBrandName(firstNonBlank(order.getBrandName(), defaults.getBrandName()));
     order.setContractNo(firstNonBlank(order.getContractNo(), defaults.getContractNo()));
     order.setCustomerName(firstNonBlank(order.getCustomerName(), defaults.getCustomerName()));
@@ -273,7 +282,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   }
 
   private void saveItems(ErpInboundOrderEntity order, Date now) {
-    Map<String, Integer> packingBoxMap = loadPackingBoxMap(order.getPresaleOrderId());
+    Map<String, Integer> packingBoxMap = loadPackingBoxMap(order.getPresaleOrderId(), order.getConfirmId());
     List<ErpInboundOrderItemEntity> items = order.getItemList() == null ? new ArrayList<ErpInboundOrderItemEntity>() : order.getItemList();
     Map<String, Integer> actualQtyByCode = new HashMap<String, Integer>();
     int lineNo = 1;
@@ -355,17 +364,16 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     inbound.setExpenseList(erpExpenseService.listBySource(ErpExpenseService.SOURCE_INBOUND_ORDER, inbound.getId()));
   }
 
-  private ErpInboundOrderEntity buildDefaultOrder(Long presaleOrderId) {
+  private ErpInboundOrderEntity buildDefaultOrder(Long presaleOrderId, Long confirmId) {
     ErpPresaleOrderEntity presale = erpPresaleOrderDao.selectById(presaleOrderId);
     if (presale == null) {
       throw new RuntimeException("预销售单不存在");
     }
-    ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectOne(
-        new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", presaleOrderId).last("limit 1"));
-    ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
-        new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", presaleOrderId).last("limit 1"));
+    ErpPresaleConfirmEntity confirm = loadConfirm(presaleOrderId, confirmId);
+    ErpPresalePackingEntity packing = loadPacking(presaleOrderId, confirm == null ? confirmId : confirm.getId());
     ErpInboundOrderEntity inbound = new ErpInboundOrderEntity();
     inbound.setPresaleOrderId(presaleOrderId);
+    inbound.setConfirmId(confirm == null ? confirmId : confirm.getId());
     inbound.setBrandId(presale.getBrandId());
     inbound.setBrandName(presale.getBrandName());
     inbound.setContractNo(firstNonBlank(confirm == null ? null : confirm.getContractNo(), presale.getSellerContractNo()));
@@ -378,9 +386,41 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     return inbound;
   }
 
-  private void enrichDraft(Long presaleOrderId, ErpRecognizedInboundDraftVo draft, List<Path> savedPaths) {
-    ErpInboundOrderEntity defaults = buildDefaultOrder(presaleOrderId);
+  private ErpPresaleConfirmEntity loadConfirm(Long presaleOrderId, Long confirmId) {
+    if (confirmId != null && confirmId > 0) {
+      ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(confirmId);
+      if (confirm != null && (presaleOrderId == null || presaleOrderId.equals(confirm.getPresaleOrderId()))) {
+        return confirm;
+      }
+    }
+    return erpPresaleConfirmDao.selectOne(
+        new QueryWrapper<ErpPresaleConfirmEntity>()
+            .eq("presale_order_id", presaleOrderId)
+            .orderByDesc("id")
+            .last("limit 1"));
+  }
+
+  private ErpPresalePackingEntity loadPacking(Long presaleOrderId, Long confirmId) {
+    if (confirmId != null && confirmId > 0) {
+      ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
+          new QueryWrapper<ErpPresalePackingEntity>()
+              .eq("confirm_id", confirmId)
+              .last("limit 1"));
+      if (packing != null) {
+        return packing;
+      }
+    }
+    return erpPresalePackingDao.selectOne(
+        new QueryWrapper<ErpPresalePackingEntity>()
+            .eq("presale_order_id", presaleOrderId)
+            .orderByDesc("id")
+            .last("limit 1"));
+  }
+
+  private void enrichDraft(Long presaleOrderId, Long confirmId, ErpRecognizedInboundDraftVo draft, List<Path> savedPaths) {
+    ErpInboundOrderEntity defaults = buildDefaultOrder(presaleOrderId, confirmId);
     draft.setPresaleOrderId(presaleOrderId);
+    draft.setConfirmId(defaults.getConfirmId());
     draft.setBrandId(defaults.getBrandId());
     draft.setBrandName(defaults.getBrandName());
     draft.setContractNo(firstNonBlank(draft.getContractNo(), defaults.getContractNo()));
@@ -395,7 +435,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
       fileVo.setFileName(savedPath.getFileName().toString());
       draft.getFileList().add(fileVo);
     }
-    Map<String, Integer> packingBoxMap = loadPackingBoxMap(presaleOrderId);
+    Map<String, Integer> packingBoxMap = loadPackingBoxMap(presaleOrderId, defaults.getConfirmId());
     if (draft.getItemList() == null) {
       draft.setItemList(new ArrayList<ErpRecognizedInboundItemVo>());
     }
@@ -459,14 +499,13 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   }
 
   @Override
-  public Map<String, Integer> getPackingBoxMap(Long presaleOrderId) {
-    return loadPackingBoxMap(presaleOrderId);
+  public Map<String, Integer> getPackingBoxMap(Long presaleOrderId, Long confirmId) {
+    return loadPackingBoxMap(presaleOrderId, confirmId);
   }
 
-  private Map<String, Integer> loadPackingBoxMap(Long presaleOrderId) {
+  private Map<String, Integer> loadPackingBoxMap(Long presaleOrderId, Long confirmId) {
     Map<String, Integer> result = new HashMap<String, Integer>();
-    ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
-        new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", presaleOrderId).last("limit 1"));
+    ErpPresalePackingEntity packing = loadPacking(presaleOrderId, confirmId);
     if (packing == null) {
       return result;
     }

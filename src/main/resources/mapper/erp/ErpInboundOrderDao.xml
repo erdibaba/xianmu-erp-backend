@@ -6,6 +6,7 @@
     SELECT
       io.id AS id,
       p.id AS presaleOrderId,
+      pc.id AS confirmId,
       p.brand_id AS brandId,
       p.brand_name AS brandName,
       COALESCE(io.contract_no, pc.contract_no, p.seller_contract_no) AS contractNo,
@@ -17,20 +18,28 @@
       CASE WHEN io.id IS NULL THEN 0 ELSE 1 END AS uploadStatus
     FROM erp_presale_order p
     INNER JOIN erp_presale_confirm pc ON pc.presale_order_id = p.id
-    INNER JOIN erp_presale_packing pp ON pp.presale_order_id = p.id
     LEFT JOIN erp_inbound_order io ON io.presale_order_id = p.id
+      AND io.confirm_id = pc.id
     WHERE 1 = 1
+      AND EXISTS (
+        SELECT 1
+        FROM erp_presale_packing pp
+        WHERE pp.presale_order_id = p.id
+          AND (pp.confirm_id = pc.id OR pp.confirm_id IS NULL)
+      )
       AND EXISTS (
         SELECT 1
         FROM erp_presale_attachment ac
         WHERE ac.presale_order_id = p.id
           AND ac.attachment_type = 'CUSTOMS'
+          AND (ac.confirm_id = pc.id OR ac.confirm_id IS NULL)
       )
       AND EXISTS (
         SELECT 1
         FROM erp_presale_attachment aq
         WHERE aq.presale_order_id = p.id
           AND aq.attachment_type = 'QUARANTINE'
+          AND (aq.confirm_id = pc.id OR aq.confirm_id IS NULL)
       )
     <if test="keyword != null and keyword != ''">
       AND (

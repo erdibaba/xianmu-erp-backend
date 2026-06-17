@@ -10,6 +10,7 @@ public class ErpInboundListVo implements Serializable {
 
   private Long id;
   private Long presaleOrderId;
+  private Long confirmId;
   private Long brandId;
   private String brandName;
   private String contractNo;

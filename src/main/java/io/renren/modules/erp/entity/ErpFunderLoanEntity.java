@@ -21,8 +21,10 @@ public class ErpFunderLoanEntity implements Serializable {
   private Long paymentId;
   private Long allocationId;
   private Long presaleOrderId;
+  private Long confirmId;
   private String presaleOrderNo;
   private String sellerContractNo;
+  private String confirmContractNo;
   private Long funderId;
   private String funderName;
   private BigDecimal loanAmount;

@@ -17,7 +17,9 @@ public class ErpPresalePackingEntity implements Serializable {
   @TableId
   private Long id;
   private Long presaleOrderId;
+  private Long confirmId;
   private String contractNo;
+  private String confirmContractNo;
   private String containerNo;
   private Integer shelfLifeDays;
   private Integer totalBoxes;

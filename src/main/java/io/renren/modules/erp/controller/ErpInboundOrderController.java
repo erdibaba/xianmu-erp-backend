@@ -30,14 +30,16 @@ public class ErpInboundOrderController extends AbstractController {
 
   @GetMapping("/info/{presaleOrderId}")
   @RequiresPermissions("erp:tradeorder:info")
-  public R info(@PathVariable("presaleOrderId") Long presaleOrderId) {
-    return R.ok().put("inboundOrder", erpInboundOrderService.getDetail(presaleOrderId));
+  public R info(@PathVariable("presaleOrderId") Long presaleOrderId,
+                @RequestParam(value = "confirmId", required = false) Long confirmId) {
+    return R.ok().put("inboundOrder", erpInboundOrderService.getDetail(presaleOrderId, confirmId));
   }
 
   @GetMapping("/packing-boxes/{presaleOrderId}")
   @RequiresPermissions("erp:tradeorder:info")
-  public R packingBoxes(@PathVariable("presaleOrderId") Long presaleOrderId) {
-    return R.ok().put("packingBoxMap", erpInboundOrderService.getPackingBoxMap(presaleOrderId));
+  public R packingBoxes(@PathVariable("presaleOrderId") Long presaleOrderId,
+                        @RequestParam(value = "confirmId", required = false) Long confirmId) {
+    return R.ok().put("packingBoxMap", erpInboundOrderService.getPackingBoxMap(presaleOrderId, confirmId));
   }
 
   @PostMapping("/save")
@@ -68,6 +70,7 @@ public class ErpInboundOrderController extends AbstractController {
   @PostMapping("/recognize")
   @RequiresPermissions("erp:tradeorder:save")
   public R recognize(@RequestParam("presaleOrderId") Long presaleOrderId,
+                     @RequestParam(value = "confirmId", required = false) Long confirmId,
                      @RequestParam("files") MultipartFile[] files) throws Exception {
     if (presaleOrderId == null || presaleOrderId <= 0) {
       return R.error("请先选择预销售单");
@@ -82,7 +85,7 @@ public class ErpInboundOrderController extends AbstractController {
         return R.error("仅支持 jpg/jpeg/png/jfif/bmp/pdf");
       }
     }
-    ErpRecognizedInboundResultVo result = erpInboundOrderService.recognize(presaleOrderId, files);
+    ErpRecognizedInboundResultVo result = erpInboundOrderService.recognize(presaleOrderId, confirmId, files);
     return R.ok().put("result", result);
   }
 

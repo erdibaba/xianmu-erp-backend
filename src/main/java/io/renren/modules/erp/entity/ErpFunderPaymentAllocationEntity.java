@@ -18,8 +18,10 @@ public class ErpFunderPaymentAllocationEntity implements Serializable {
   private Long id;
   private Long paymentId;
   private Long presaleOrderId;
+  private Long confirmId;
   private String presaleOrderNo;
   private String sellerContractNo;
+  private String confirmContractNo;
   @TableField(exist = false)
   private BigDecimal orderContractAmount;
   private BigDecimal allocationAmount;

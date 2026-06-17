@@ -93,7 +93,9 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     }
     IPage<ErpPresaleOrderEntity> page = this.page(new Query<ErpPresaleOrderEntity>().getPage(params), wrapper);
     for (ErpPresaleOrderEntity entity : page.getRecords()) {
-      entity.setConfirmUploaded(hasConfirm(entity.getId()) ? 1 : 0);
+      Integer confirmCount = erpPresaleConfirmDao.selectCount(new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", entity.getId()));
+      entity.setConfirmCount(confirmCount == null ? 0 : confirmCount);
+      entity.setConfirmUploaded(entity.getConfirmCount() > 0 ? 1 : 0);
       entity.setPackingUploaded(hasPacking(entity.getId()) ? 1 : 0);
       entity.setCustomsUploaded(hasAttachment(entity.getId(), "CUSTOMS") ? 1 : 0);
       entity.setQuarantineUploaded(hasAttachment(entity.getId(), "QUARANTINE") ? 1 : 0);
@@ -109,34 +111,18 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     }
     entity.setItemList(erpPresaleOrderItemDao.selectList(
         new QueryWrapper<ErpPresaleOrderItemEntity>().eq("presale_order_id", id).orderByAsc("line_no", "id")));
-    ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectOne(
-        new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", id).last("limit 1"));
-    if (confirm != null) {
-      List<ErpPresaleConfirmItemEntity> confirmItems = erpPresaleConfirmItemDao.selectList(
-          new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", confirm.getId()).orderByAsc("line_no", "id"));
-      for (ErpPresaleConfirmItemEntity confirmItem : confirmItems) {
-        fillConfirmItemMarketCirculationName(confirmItem);
-      }
-      confirm.setItemList(confirmItems);
-    }
-    ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
-        new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", id).last("limit 1"));
-    if (packing != null) {
-      List<ErpPresalePackingItemEntity> packingItems = erpPresalePackingItemDao.selectList(
-          new QueryWrapper<ErpPresalePackingItemEntity>().eq("packing_id", packing.getId()).orderByAsc("line_no", "id"));
-      for (ErpPresalePackingItemEntity packingItem : packingItems) {
-        packingItem.setBatchList(erpPresalePackingBatchDao.selectList(
-            new QueryWrapper<ErpPresalePackingBatchEntity>().eq("packing_item_id", packingItem.getId()).orderByAsc("line_no", "id")));
-      }
-      packing.setItemList(packingItems);
-    }
+    List<ErpPresaleConfirmEntity> confirmList = loadConfirmList(id);
+    ErpPresaleConfirmEntity confirm = confirmList.isEmpty() ? null : confirmList.get(0);
+    ErpPresalePackingEntity packing = loadPackingForConfirm(id, confirm == null ? null : confirm.getId());
     entity.setConfirmInfo(confirm);
+    entity.setConfirmList(confirmList);
+    entity.setConfirmCount(confirmList.size());
     entity.setPackingInfo(packing);
     List<ErpPresaleAttachmentEntity> quarantineList = listAttachments(id, "QUARANTINE");
     entity.setCustomsInfo(findAttachment(id, "CUSTOMS"));
     entity.setQuarantineInfo(quarantineList.isEmpty() ? null : quarantineList.get(0));
     entity.setQuarantineList(quarantineList);
-    entity.setConfirmUploaded(confirm == null ? 0 : 1);
+    entity.setConfirmUploaded(confirmList.isEmpty() ? 0 : 1);
     entity.setPackingUploaded(packing == null ? 0 : 1);
     entity.setCustomsUploaded(entity.getCustomsInfo() == null ? 0 : 1);
     entity.setQuarantineUploaded(quarantineList.isEmpty() ? 0 : 1);
@@ -172,15 +158,15 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   @Transactional(rollbackFor = Exception.class)
   public void deleteOrders(Long[] ids) {
     for (Long id : ids) {
-      ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectOne(
-          new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", id).last("limit 1"));
-      if (confirm != null) {
+      List<ErpPresaleConfirmEntity> confirmList = erpPresaleConfirmDao.selectList(
+          new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", id));
+      for (ErpPresaleConfirmEntity confirm : confirmList) {
         erpPresaleConfirmItemDao.delete(new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", confirm.getId()));
         erpPresaleConfirmDao.deleteById(confirm.getId());
       }
-      ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
-          new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", id).last("limit 1"));
-      if (packing != null) {
+      List<ErpPresalePackingEntity> packingList = erpPresalePackingDao.selectList(
+          new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", id));
+      for (ErpPresalePackingEntity packing : packingList) {
         List<ErpPresalePackingItemEntity> packingItems = erpPresalePackingItemDao.selectList(
             new QueryWrapper<ErpPresalePackingItemEntity>().eq("packing_id", packing.getId()));
         for (ErpPresalePackingItemEntity packingItem : packingItems) {
@@ -339,6 +325,43 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     order.setUpdateTime(now);
   }
 
+  private List<ErpPresaleConfirmEntity> loadConfirmList(Long presaleOrderId) {
+    List<ErpPresaleConfirmEntity> confirmList = erpPresaleConfirmDao.selectList(
+        new QueryWrapper<ErpPresaleConfirmEntity>()
+            .eq("presale_order_id", presaleOrderId)
+            .orderByDesc("id"));
+    for (ErpPresaleConfirmEntity confirm : confirmList) {
+      List<ErpPresaleConfirmItemEntity> confirmItems = erpPresaleConfirmItemDao.selectList(
+          new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", confirm.getId()).orderByAsc("line_no", "id"));
+      for (ErpPresaleConfirmItemEntity confirmItem : confirmItems) {
+        fillConfirmItemMarketCirculationName(confirmItem);
+      }
+      confirm.setItemList(confirmItems);
+    }
+    return confirmList;
+  }
+
+  private ErpPresalePackingEntity loadPackingForConfirm(Long presaleOrderId, Long confirmId) {
+    QueryWrapper<ErpPresalePackingEntity> wrapper = new QueryWrapper<ErpPresalePackingEntity>()
+        .eq("presale_order_id", presaleOrderId)
+        .orderByDesc("id")
+        .last("limit 1");
+    if (confirmId != null) {
+      wrapper.eq("confirm_id", confirmId);
+    }
+    ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(wrapper);
+    if (packing != null) {
+      List<ErpPresalePackingItemEntity> packingItems = erpPresalePackingItemDao.selectList(
+          new QueryWrapper<ErpPresalePackingItemEntity>().eq("packing_id", packing.getId()).orderByAsc("line_no", "id"));
+      for (ErpPresalePackingItemEntity packingItem : packingItems) {
+        packingItem.setBatchList(erpPresalePackingBatchDao.selectList(
+            new QueryWrapper<ErpPresalePackingBatchEntity>().eq("packing_item_id", packingItem.getId()).orderByAsc("line_no", "id")));
+      }
+      packing.setItemList(packingItems);
+    }
+    return packing;
+  }
+
   private void validateEstimateOrderRequired(ErpPresaleOrderEntity order) {
     if (order.getBrandId() == null) {
       throw new RuntimeException("请选择预售销售单品牌方");
@@ -402,11 +425,16 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   private void replaceConfirm(ErpPresaleOrderEntity order, Long userId, Date now) {
-    ErpPresaleConfirmEntity existing = erpPresaleConfirmDao.selectOne(
-        new QueryWrapper<ErpPresaleConfirmEntity>().eq("presale_order_id", order.getId()).last("limit 1"));
-    if (existing != null) {
-      erpPresaleConfirmItemDao.delete(new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", existing.getId()));
-      erpPresaleConfirmDao.deleteById(existing.getId());
+    ErpPresaleConfirmEntity confirm = order.getConfirmInfo();
+    if (confirm == null) {
+      return;
+    }
+    if (confirm.getId() != null && confirm.getId() > 0) {
+      normalizeConfirm(order.getId(), confirm, userId, now, false);
+      erpPresaleConfirmDao.updateById(confirm);
+      erpPresaleConfirmItemDao.delete(new QueryWrapper<ErpPresaleConfirmItemEntity>().eq("confirm_id", confirm.getId()));
+      saveConfirmItems(confirm, now);
+      return;
     }
     saveConfirm(order, userId, now);
   }
@@ -420,8 +448,17 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   private void replacePacking(ErpPresaleOrderEntity order, Long userId, Date now) {
-    ErpPresalePackingEntity existing = erpPresalePackingDao.selectOne(
-        new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", order.getId()).last("limit 1"));
+    if (order.getPackingInfo() == null) {
+      return;
+    }
+    normalizePacking(order.getId(), order.getPackingInfo(), userId, now, false);
+    QueryWrapper<ErpPresalePackingEntity> existingWrapper = new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", order.getId());
+    if (order.getPackingInfo().getConfirmId() != null) {
+      existingWrapper.eq("confirm_id", order.getPackingInfo().getConfirmId());
+    } else {
+      existingWrapper.last("limit 1");
+    }
+    ErpPresalePackingEntity existing = erpPresalePackingDao.selectOne(existingWrapper);
     if (existing != null) {
       List<ErpPresalePackingItemEntity> packingItems = erpPresalePackingItemDao.selectList(
           new QueryWrapper<ErpPresalePackingItemEntity>().eq("packing_id", existing.getId()));
@@ -431,7 +468,11 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       erpPresalePackingItemDao.delete(new QueryWrapper<ErpPresalePackingItemEntity>().eq("packing_id", existing.getId()));
       erpPresalePackingDao.deleteById(existing.getId());
     }
-    savePacking(order, userId, now);
+    ErpPresalePackingEntity packing = order.getPackingInfo();
+    packing.setId(null);
+    normalizePacking(order.getId(), packing, userId, now, true);
+    erpPresalePackingDao.insert(packing);
+    savePackingItems(packing, now);
   }
 
   private void normalizeConfirm(Long presaleOrderId, ErpPresaleConfirmEntity confirm, Long userId, Date now, boolean create) {
@@ -480,6 +521,17 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   private void normalizePacking(Long presaleOrderId, ErpPresalePackingEntity packing, Long userId, Date now, boolean create) {
     packing.setPresaleOrderId(presaleOrderId);
+    ErpPresaleConfirmEntity confirm = resolveConfirmForPacking(presaleOrderId, packing);
+    if (confirm != null) {
+      packing.setConfirmId(confirm.getId());
+      packing.setConfirmContractNo(confirm.getContractNo());
+      if (StringUtils.isBlank(packing.getContractNo())) {
+        packing.setContractNo(confirm.getContractNo());
+      }
+      if (StringUtils.isBlank(packing.getContainerNo())) {
+        packing.setContainerNo(confirm.getContainerNo());
+      }
+    }
     if (StringUtils.isBlank(packing.getFileName()) && StringUtils.isNotBlank(packing.getFilePath())) {
       packing.setFileName(new File(packing.getFilePath()).getName());
     }
@@ -508,6 +560,40 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       packing.setCreateTime(now);
     }
     packing.setUpdateTime(now);
+  }
+
+  private ErpPresaleConfirmEntity resolveConfirmForPacking(Long presaleOrderId, ErpPresalePackingEntity packing) {
+    if (packing == null || presaleOrderId == null) {
+      return null;
+    }
+    if (packing.getConfirmId() != null) {
+      ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(packing.getConfirmId());
+      if (confirm != null) {
+        return confirm;
+      }
+    }
+    QueryWrapper<ErpPresaleConfirmEntity> wrapper = new QueryWrapper<ErpPresaleConfirmEntity>()
+        .eq("presale_order_id", presaleOrderId)
+        .orderByDesc("id")
+        .last("limit 1");
+    String contractNo = StringUtils.trimToEmpty(packing.getContractNo());
+    String containerNo = StringUtils.trimToEmpty(packing.getContainerNo());
+    if (StringUtils.isNotBlank(contractNo) || StringUtils.isNotBlank(containerNo)) {
+      wrapper.and(q -> {
+        boolean hasPrev = false;
+        if (StringUtils.isNotBlank(contractNo)) {
+          q.eq("contract_no", contractNo);
+          hasPrev = true;
+        }
+        if (StringUtils.isNotBlank(containerNo)) {
+          if (hasPrev) {
+            q.or();
+          }
+          q.eq("container_no", containerNo);
+        }
+      });
+    }
+    return erpPresaleConfirmDao.selectOne(wrapper);
   }
 
   private void savePackingItems(ErpPresalePackingEntity packing, Date now) {

@@ -11,6 +11,7 @@ public class ErpRecognizedInboundDraftVo implements Serializable {
   private static final long serialVersionUID = 1L;
 
   private Long presaleOrderId;
+  private Long confirmId;
   private Long brandId;
   private String brandName;
   private String contractNo;

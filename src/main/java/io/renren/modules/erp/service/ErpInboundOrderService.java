@@ -10,9 +10,9 @@ import org.springframework.web.multipart.MultipartFile;
 public interface ErpInboundOrderService {
   PageUtils queryPage(Map<String, Object> params);
 
-  ErpInboundOrderEntity getDetail(Long presaleOrderId);
+  ErpInboundOrderEntity getDetail(Long presaleOrderId, Long confirmId);
 
-  Map<String, Integer> getPackingBoxMap(Long presaleOrderId);
+  Map<String, Integer> getPackingBoxMap(Long presaleOrderId, Long confirmId);
 
   void saveOrder(ErpInboundOrderEntity order, Long userId);
 
@@ -20,7 +20,7 @@ public interface ErpInboundOrderService {
 
   void saveItemDamage(Long itemId, java.math.BigDecimal damageWeightKg, String damageReason);
 
-  ErpRecognizedInboundResultVo recognize(Long presaleOrderId, MultipartFile[] files) throws Exception;
+  ErpRecognizedInboundResultVo recognize(Long presaleOrderId, Long confirmId, MultipartFile[] files) throws Exception;
 
   ResponseEntity<byte[]> downloadFile(Long fileId);
 }

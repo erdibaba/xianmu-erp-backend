@@ -130,8 +130,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
             .orderByAsc("id"));
     Map<Long, List<String>> contractMap = new HashMap<Long, List<String>>();
     for (ErpFunderPaymentAllocationEntity allocation : allocationList) {
-      if (allocation == null || allocation.getPaymentId() == null
-          || StringUtils.isBlank(allocation.getSellerContractNo())) {
+      String contractNo = firstNonBlank(allocation == null ? null : allocation.getConfirmContractNo(),
+          allocation == null ? null : allocation.getSellerContractNo());
+      if (allocation == null || allocation.getPaymentId() == null || StringUtils.isBlank(contractNo)) {
         continue;
       }
       List<String> contracts = contractMap.get(allocation.getPaymentId());
@@ -139,8 +140,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         contracts = new ArrayList<String>();
         contractMap.put(allocation.getPaymentId(), contracts);
       }
-      if (!contracts.contains(allocation.getSellerContractNo())) {
-        contracts.add(allocation.getSellerContractNo());
+      if (!contracts.contains(contractNo)) {
+        contracts.add(contractNo);
       }
     }
     for (ErpFunderPaymentEntity payment : paymentList) {
@@ -193,20 +194,27 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
 
   @Override
   public List<ErpPresaleOrderEntity> queryPresaleOptions(String keyword) {
-    QueryWrapper<ErpPresaleOrderEntity> wrapper = new QueryWrapper<ErpPresaleOrderEntity>()
-        .notInSql("id", "select presale_order_id from erp_funder_payment_allocation")
-        .orderByDesc("order_date", "id")
+    QueryWrapper<ErpPresaleConfirmEntity> confirmWrapper = new QueryWrapper<ErpPresaleConfirmEntity>()
+        .notInSql("id", "select confirm_id from erp_funder_payment_allocation where confirm_id is not null")
+        .orderByDesc("expected_arrival_date", "id")
         .last("limit 15");
     if (StringUtils.isNotBlank(keyword)) {
-      wrapper.and(q -> q.like("order_no", keyword)
-          .or().like("seller_contract_no", keyword)
-          .or().like("customer_reference", keyword));
+      confirmWrapper.and(q -> q.like("contract_no", keyword)
+          .or().like("container_no", keyword)
+          .or().like("buyer_partner_name", keyword));
     }
-    List<ErpPresaleOrderEntity> list = presaleOrderDao.selectList(wrapper);
-    for (ErpPresaleOrderEntity presale : list) {
-      presale.setConfirmInfo(presaleConfirmDao.selectOne(new QueryWrapper<ErpPresaleConfirmEntity>()
-          .eq("presale_order_id", presale.getId())
-          .last("limit 1")));
+    List<ErpPresaleConfirmEntity> confirmList = presaleConfirmDao.selectList(confirmWrapper);
+    List<ErpPresaleOrderEntity> list = new ArrayList<ErpPresaleOrderEntity>();
+    for (ErpPresaleConfirmEntity confirm : confirmList) {
+      if (confirm == null || confirm.getPresaleOrderId() == null) {
+        continue;
+      }
+      ErpPresaleOrderEntity presale = presaleOrderDao.selectById(confirm.getPresaleOrderId());
+      if (presale == null) {
+        continue;
+      }
+      presale.setConfirmInfo(confirm);
+      list.add(presale);
     }
     return list;
   }
@@ -269,8 +277,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     BigDecimal allocationTotal = BigDecimal.ZERO;
     boolean xianmuInstallmentsComplete = true;
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
+      ErpPresaleConfirmEntity confirm = loadConfirmForAllocation(allocation);
       if (paymentType == PAYMENT_TYPE_XIANMU) {
-        allocation.setAllocationAmount(confirmTotalAmount(allocation.getPresaleOrderId()));
+        allocation.setAllocationAmount(confirmTotalAmount(confirm.getId()));
       }
       allocationTotal = allocationTotal.add(money(allocation.getAllocationAmount()));
       if (paymentType == PAYMENT_TYPE_FUNDER) {
@@ -299,13 +308,17 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     paymentDao.insert(payment);
 
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
-      ErpPresaleOrderEntity presale = presaleOrderDao.selectById(allocation.getPresaleOrderId());
+      ErpPresaleConfirmEntity confirm = loadConfirmForAllocation(allocation);
+      ErpPresaleOrderEntity presale = presaleOrderDao.selectById(confirm.getPresaleOrderId());
       if (presale == null) {
-        throw new RuntimeException("存在已删除或无效的预销售单，请重新选择");
+        throw new RuntimeException("确认函关联的预销售单不存在，请重新选择");
       }
       allocation.setPaymentId(payment.getId());
+      allocation.setConfirmId(confirm.getId());
+      allocation.setPresaleOrderId(presale.getId());
       allocation.setPresaleOrderNo(presale.getOrderNo());
       allocation.setSellerContractNo(presale.getSellerContractNo());
+      allocation.setConfirmContractNo(confirm.getContractNo());
       allocation.setAllocationAmount(money(allocation.getAllocationAmount()));
       allocation.setXianmuContributionRecognizedAmount(money(allocation.getXianmuContributionRecognizedAmount()));
       allocation.setXianmuContributionModifiedAmount(money(allocation.getXianmuContributionModifiedAmount()));
@@ -330,8 +343,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       loan.setPaymentId(payment.getId());
       loan.setAllocationId(allocation.getId());
       loan.setPresaleOrderId(presale.getId());
+      loan.setConfirmId(confirm.getId());
       loan.setPresaleOrderNo(presale.getOrderNo());
       loan.setSellerContractNo(presale.getSellerContractNo());
+      loan.setConfirmContractNo(confirm.getContractNo());
       loan.setFunderId(funder.getId());
       loan.setFunderName(funder.getPartnerName());
       loan.setLoanAmount(loanPrincipal);
@@ -359,6 +374,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       wrapper.and(q -> q.like("loan_no", keyword)
           .or().like("presale_order_no", keyword)
           .or().like("seller_contract_no", keyword)
+          .or().like("confirm_contract_no", keyword)
           .or().like("funder_name", keyword));
     }
     if (StringUtils.isNotBlank(status)) {
@@ -531,26 +547,26 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       throw new RuntimeException("请先上传资方打款凭证");
     }
     if (payment.getAllocationList() == null || payment.getAllocationList().isEmpty()) {
-      throw new RuntimeException("请至少选择一张预销售单并填写分摊金额");
+      throw new RuntimeException("请至少选择一张客户订单确认函并填写分摊金额");
     }
     if (paymentType == PAYMENT_TYPE_XIANMU && payment.getAllocationList().size() != 1) {
-      throw new RuntimeException("鲜牧全款打款只能选择一张预销售单");
+      throw new RuntimeException("鲜牧全款打款只能选择一张客户订单确认函");
     }
-    List<Long> presaleIds = new ArrayList<Long>();
+    List<Long> confirmIds = new ArrayList<Long>();
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
-      if (allocation.getPresaleOrderId() == null || allocation.getAllocationAmount() == null
+      if (allocation.getConfirmId() == null || allocation.getAllocationAmount() == null
           || allocation.getAllocationAmount().compareTo(BigDecimal.ZERO) <= 0) {
-        throw new RuntimeException("每张预销售单的分摊金额都必须大于0");
+        throw new RuntimeException("每张客户订单确认函的分摊金额都必须大于0");
       }
-      if (presaleIds.contains(allocation.getPresaleOrderId())) {
-        throw new RuntimeException("同一张预销售单不能重复分摊");
+      if (confirmIds.contains(allocation.getConfirmId())) {
+        throw new RuntimeException("同一张客户订单确认函不能重复分摊");
       }
       Integer existingCount = allocationDao.selectCount(new QueryWrapper<ErpFunderPaymentAllocationEntity>()
-          .eq("presale_order_id", allocation.getPresaleOrderId()));
+          .eq("confirm_id", allocation.getConfirmId()));
       if (existingCount != null && existingCount > 0) {
-        throw new RuntimeException("该合同已经进行过资方全款或鲜牧全款打款，不能重复选择");
+        throw new RuntimeException("该确认函合同已经进行过资方全款或鲜牧全款打款，不能重复选择");
       }
-      presaleIds.add(allocation.getPresaleOrderId());
+      confirmIds.add(allocation.getConfirmId());
     }
   }
 
@@ -572,14 +588,15 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     BigDecimal allocationTotal = BigDecimal.ZERO;
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
-      allocation.setAllocationAmount(confirmTotalAmount(allocation.getPresaleOrderId()));
-      if (allocation.getPresaleOrderId() == null || allocation.getAllocationAmount() == null
+      ErpPresaleConfirmEntity confirm = loadConfirmForAllocation(allocation);
+      allocation.setAllocationAmount(confirmTotalAmount(confirm.getId()));
+      if (allocation.getConfirmId() == null || allocation.getAllocationAmount() == null
           || allocation.getAllocationAmount().compareTo(BigDecimal.ZERO) <= 0) {
-        throw new RuntimeException("每张预销售单的分摊金额都必须大于0");
+        throw new RuntimeException("每张客户订单确认函的分摊金额都必须大于0");
       }
       Integer existingAllocationCount = allocationDao.selectCount(new QueryWrapper<ErpFunderPaymentAllocationEntity>()
           .eq("payment_id", existing.getId())
-          .eq("presale_order_id", allocation.getPresaleOrderId()));
+          .eq("confirm_id", allocation.getConfirmId()));
       if (existingAllocationCount == null || existingAllocationCount == 0) {
         throw new RuntimeException("补尾款时不能变更合同号，请重新打开待尾款记录");
       }
@@ -601,13 +618,17 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
 
     allocationDao.delete(new QueryWrapper<ErpFunderPaymentAllocationEntity>().eq("payment_id", existing.getId()));
     for (ErpFunderPaymentAllocationEntity allocation : payment.getAllocationList()) {
-      ErpPresaleOrderEntity presale = presaleOrderDao.selectById(allocation.getPresaleOrderId());
+      ErpPresaleConfirmEntity confirm = loadConfirmForAllocation(allocation);
+      ErpPresaleOrderEntity presale = presaleOrderDao.selectById(confirm.getPresaleOrderId());
       if (presale == null) {
-        throw new RuntimeException("存在已删除或无效的预销售单，请重新选择");
+        throw new RuntimeException("确认函关联的预销售单不存在，请重新选择");
       }
       allocation.setPaymentId(existing.getId());
+      allocation.setConfirmId(confirm.getId());
+      allocation.setPresaleOrderId(presale.getId());
       allocation.setPresaleOrderNo(presale.getOrderNo());
       allocation.setSellerContractNo(presale.getSellerContractNo());
+      allocation.setConfirmContractNo(confirm.getContractNo());
       allocation.setAllocationAmount(money(allocation.getAllocationAmount()));
       allocation.setXianmuDepositRecognizedAmount(money(allocation.getXianmuDepositRecognizedAmount()));
       allocation.setXianmuDepositModifiedAmount(money(allocation.getXianmuDepositModifiedAmount()));
@@ -702,21 +723,31 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     builder.append(value);
   }
 
-  private BigDecimal confirmTotalAmount(Long presaleOrderId) {
-    if (presaleOrderId == null) {
-      throw new RuntimeException("请选择预销售单");
-    }
-    ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectOne(new QueryWrapper<ErpPresaleConfirmEntity>()
-        .eq("presale_order_id", presaleOrderId)
-        .last("limit 1"));
-    if (confirm == null) {
-      throw new RuntimeException("所选预销售单尚未上传客户订单确认函，不能进行鲜牧全款打款");
-    }
+  private BigDecimal confirmTotalAmount(Long confirmId) {
+    ErpPresaleConfirmEntity confirm = loadConfirmById(confirmId);
     BigDecimal totalAmount = money(confirm.getTotalAmount());
     if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
-      throw new RuntimeException("所选预销售单的客户订单确认函总金额为空或为0，不能进行鲜牧全款打款");
+      throw new RuntimeException("所选客户订单确认函总金额为空或为0，不能进行打款");
     }
     return totalAmount;
+  }
+
+  private ErpPresaleConfirmEntity loadConfirmForAllocation(ErpFunderPaymentAllocationEntity allocation) {
+    if (allocation == null || allocation.getConfirmId() == null) {
+      throw new RuntimeException("请选择客户订单确认函");
+    }
+    return loadConfirmById(allocation.getConfirmId());
+  }
+
+  private ErpPresaleConfirmEntity loadConfirmById(Long confirmId) {
+    if (confirmId == null) {
+      throw new RuntimeException("请选择客户订单确认函");
+    }
+    ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectById(confirmId);
+    if (confirm == null) {
+      throw new RuntimeException("所选客户订单确认函不存在，请重新选择");
+    }
+    return confirm;
   }
 
   private void fillOrderContractAmount(List<ErpFunderPaymentAllocationEntity> allocationList) {
@@ -724,14 +755,13 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       return;
     }
     for (ErpFunderPaymentAllocationEntity allocation : allocationList) {
-      if (allocation.getPresaleOrderId() == null) {
+      if (allocation.getConfirmId() == null) {
         continue;
       }
-      ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectOne(new QueryWrapper<ErpPresaleConfirmEntity>()
-          .eq("presale_order_id", allocation.getPresaleOrderId())
-          .last("limit 1"));
+      ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectById(allocation.getConfirmId());
       if (confirm != null && confirm.getTotalAmount() != null) {
         allocation.setOrderContractAmount(money(confirm.getTotalAmount()));
+        allocation.setConfirmContractNo(confirm.getContractNo());
       }
     }
   }
@@ -1331,6 +1361,18 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
 
   private String stringValue(Object value) {
     return value == null ? "" : StringUtils.trimToEmpty(value.toString());
+  }
+
+  private String firstNonBlank(String... values) {
+    if (values == null) {
+      return "";
+    }
+    for (String value : values) {
+      if (StringUtils.isNotBlank(value)) {
+        return value;
+      }
+    }
+    return "";
   }
 
   private BigDecimal money(BigDecimal value) {

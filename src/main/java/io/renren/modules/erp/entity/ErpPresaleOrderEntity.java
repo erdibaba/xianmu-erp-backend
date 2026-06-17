@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 import lombok.Data;
@@ -28,6 +29,21 @@ public class ErpPresaleOrderEntity implements Serializable {
   private Date orderDate;
   private Date expectedDate;
   private Integer status;
+  private BigDecimal depositRate;
+  private BigDecimal depositReferenceAmount;
+  private BigDecimal depositRecognizedAmount;
+  private BigDecimal depositModifiedAmount;
+  private Date depositPaymentDate;
+  private String depositFilePath;
+  private String depositFileName;
+  private String depositRawText;
+  private BigDecimal depositRefundRecognizedAmount;
+  private BigDecimal depositRefundModifiedAmount;
+  private Date depositRefundDate;
+  private String depositRefundFilePath;
+  private String depositRefundFileName;
+  private String depositRefundRawText;
+  private Integer depositStatus;
   private String remark;
   private Long createUserId;
   private Date createTime;
@@ -40,10 +56,16 @@ public class ErpPresaleOrderEntity implements Serializable {
   private ErpPresaleConfirmEntity confirmInfo;
 
   @TableField(exist = false)
+  private List<ErpPresaleConfirmEntity> confirmList;
+
+  @TableField(exist = false)
   private ErpPresalePackingEntity packingInfo;
 
   @TableField(exist = false)
   private Integer confirmUploaded;
+
+  @TableField(exist = false)
+  private Integer confirmCount;
 
   @TableField(exist = false)
   private Integer packingUploaded;

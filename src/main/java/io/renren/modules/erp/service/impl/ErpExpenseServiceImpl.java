@@ -109,7 +109,7 @@ public class ErpExpenseServiceImpl extends ServiceImpl<ErpExpenseDao, ErpExpense
       return;
     }
     Long presaleOrderId = order.getPresaleOrderId();
-    ErpPresaleConfirmEntity confirm = loadConfirm(presaleOrderId);
+    ErpPresaleConfirmEntity confirm = loadConfirm(presaleOrderId, order.getConfirmId());
     BigDecimal weightKg = sumConfirmWeightKg(confirm == null ? null : confirm.getId());
     if (weightKg.compareTo(BigDecimal.ZERO) <= 0 || order.getWarehouseId() == null) {
       deleteBySource(TYPE_INBOUND_HANDLING, SOURCE_INBOUND_ORDER, order.getId());
@@ -170,7 +170,7 @@ public class ErpExpenseServiceImpl extends ServiceImpl<ErpExpenseDao, ErpExpense
       deleteBySource(TYPE_OUTBOUND_STORAGE, SOURCE_OUTBOUND_BATCH, batch.getId());
       return;
     }
-    ErpPresaleConfirmEntity confirm = loadConfirm(presaleOrderId);
+    ErpPresaleConfirmEntity confirm = loadConfirm(presaleOrderId, inbound == null ? null : inbound.getConfirmId());
     String temperatureZone = normalizeTemperature(confirm == null ? null : confirm.getColdFreshType());
     Date startDate = resolveStorageStartDate(order, saleItems, inbound);
     Date endDate = batch.getConfirmTime() == null ? new Date() : batch.getConfirmTime();
@@ -318,16 +318,19 @@ public class ErpExpenseServiceImpl extends ServiceImpl<ErpExpenseDao, ErpExpense
   }
 
   private ErpInboundOrderEntity resolveInboundOrder(ErpSaleOrderEntity order, List<ErpSaleOrderItemEntity> items, Long presaleOrderId) {
+    for (ErpSaleOrderItemEntity item : items) {
+      if (item.getSourceInboundOrderId() != null) {
+        ErpInboundOrderEntity inbound = erpInboundOrderDao.selectById(item.getSourceInboundOrderId());
+        if (inbound != null) {
+          return inbound;
+        }
+      }
+    }
     if (presaleOrderId != null) {
       ErpInboundOrderEntity inbound = erpInboundOrderDao.selectOne(
           new QueryWrapper<ErpInboundOrderEntity>().eq("presale_order_id", presaleOrderId).last("limit 1"));
       if (inbound != null) {
         return inbound;
-      }
-    }
-    for (ErpSaleOrderItemEntity item : items) {
-      if (item.getSourceInboundOrderId() != null) {
-        return erpInboundOrderDao.selectById(item.getSourceInboundOrderId());
       }
     }
     return null;
@@ -352,6 +355,16 @@ public class ErpExpenseServiceImpl extends ServiceImpl<ErpExpenseDao, ErpExpense
   }
 
   private ErpPresaleConfirmEntity loadConfirm(Long presaleOrderId) {
+    return loadConfirm(presaleOrderId, null);
+  }
+
+  private ErpPresaleConfirmEntity loadConfirm(Long presaleOrderId, Long confirmId) {
+    if (confirmId != null && confirmId > 0) {
+      ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(confirmId);
+      if (confirm != null) {
+        return confirm;
+      }
+    }
     if (presaleOrderId == null) {
       return null;
     }

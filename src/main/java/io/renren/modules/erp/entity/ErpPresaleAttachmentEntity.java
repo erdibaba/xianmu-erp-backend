@@ -14,6 +14,7 @@ public class ErpPresaleAttachmentEntity implements Serializable {
   @TableId
   private Long id;
   private Long presaleOrderId;
+  private Long confirmId;
   private String attachmentType;
   private String filePath;
   private String fileName;

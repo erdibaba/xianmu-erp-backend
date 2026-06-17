@@ -1323,12 +1323,16 @@ implements ErpSaleOrderService {
             return Collections.emptyMap();
         }
         ArrayList<Long> presaleOrderIds = new ArrayList<Long>();
+        ArrayList<Long> confirmIds = new ArrayList<Long>();
         for (ErpInboundOrderEntity order : inboundOrderMap.values()) {
             if (order.getPresaleOrderId() != null && !presaleOrderIds.contains(order.getPresaleOrderId())) {
                 presaleOrderIds.add(order.getPresaleOrderId());
             }
+            if (order.getConfirmId() != null && !confirmIds.contains(order.getConfirmId())) {
+                confirmIds.add(order.getConfirmId());
+            }
         }
-        Map<Long, String> ownershipMap = this.loadOwnershipNameMap(presaleOrderIds);
+        Map<Long, String> ownershipMap = this.loadOwnershipNameMap(presaleOrderIds, confirmIds);
         QueryWrapper saleItemWrapper = (QueryWrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_type", (Object)SALE_TYPE_SPOT)).in((Object)"source_inbound_item_id", inboundItemIds);
         if (excludeOrderId != null && excludeOrderId > 0L) {
             saleItemWrapper.ne((Object)"sale_order_id", (Object)excludeOrderId);
@@ -1350,7 +1354,7 @@ implements ErpSaleOrderService {
             candidate.inboundItem = inboundItem;
             candidate.product = product;
             candidate.availableBoxes = available;
-            candidate.ownershipName = this.resolveOwnershipName(inboundOrder, ownershipMap);
+            candidate.ownershipName = this.resolveOwnershipNameByConfirm(inboundOrder, ownershipMap);
             ArrayList<StockCandidate> list = (ArrayList<StockCandidate>)result.get(product.getId());
             if (list == null) {
                 list = new ArrayList<StockCandidate>();
@@ -1379,13 +1383,23 @@ implements ErpSaleOrderService {
         return result;
     }
 
-    private Map<Long, String> loadOwnershipNameMap(List<Long> presaleOrderIds) {
+    private Map<Long, String> loadOwnershipNameMap(List<Long> presaleOrderIds, List<Long> confirmIds) {
         HashMap<Long, String> result = new HashMap<Long, String>();
-        if (presaleOrderIds == null || presaleOrderIds.isEmpty()) {
+        boolean hasPresaleIds = presaleOrderIds != null && !presaleOrderIds.isEmpty();
+        boolean hasConfirmIds = confirmIds != null && !confirmIds.isEmpty();
+        if (!hasPresaleIds && !hasConfirmIds) {
             return result;
         }
-        List<ErpFunderPaymentAllocationEntity> allocations = this.erpFunderPaymentAllocationDao.selectList((Wrapper)new QueryWrapper<ErpFunderPaymentAllocationEntity>()
-                .in("presale_order_id", presaleOrderIds));
+        ArrayList<ErpFunderPaymentAllocationEntity> allocations = new ArrayList<ErpFunderPaymentAllocationEntity>();
+        if (hasConfirmIds) {
+            allocations.addAll(this.erpFunderPaymentAllocationDao.selectList((Wrapper)new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+                    .in("confirm_id", confirmIds)));
+        }
+        if (hasPresaleIds) {
+            allocations.addAll(this.erpFunderPaymentAllocationDao.selectList((Wrapper)new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+                    .in("presale_order_id", presaleOrderIds)
+                    .isNull("confirm_id")));
+        }
         if (allocations == null || allocations.isEmpty()) {
             return result;
         }
@@ -1424,10 +1438,11 @@ implements ErpSaleOrderService {
             if (allocation == null || allocation.getPresaleOrderId() == null) continue;
             ErpFunderPaymentEntity payment = paymentMap.get(allocation.getPaymentId());
             if (payment == null) continue;
-            OwnershipState state = stateMap.get(allocation.getPresaleOrderId());
+            Long ownershipKey = this.ownershipKey(allocation.getPresaleOrderId(), allocation.getConfirmId());
+            OwnershipState state = stateMap.get(ownershipKey);
             if (state == null) {
                 state = new OwnershipState();
-                stateMap.put(allocation.getPresaleOrderId(), state);
+                stateMap.put(ownershipKey, state);
             }
             Integer paymentType = payment.getPaymentType();
             if (paymentType != null && (paymentType == 1 || paymentType == 2)) {
@@ -1472,6 +1487,21 @@ implements ErpSaleOrderService {
             }
         }
         return "";
+    }
+
+    private String resolveOwnershipNameByConfirm(ErpInboundOrderEntity inboundOrder, Map<Long, String> ownershipMap) {
+        if (inboundOrder == null || inboundOrder.getPresaleOrderId() == null || ownershipMap == null) {
+            return "\u672a\u786e\u8ba4";
+        }
+        String ownershipName = ownershipMap.get(this.ownershipKey(inboundOrder.getPresaleOrderId(), inboundOrder.getConfirmId()));
+        if (StringUtils.isNotBlank(ownershipName)) {
+            return ownershipName;
+        }
+        return this.firstNonBlank(ownershipMap.get(inboundOrder.getPresaleOrderId()), "\u672a\u786e\u8ba4");
+    }
+
+    private Long ownershipKey(Long presaleOrderId, Long confirmId) {
+        return confirmId != null && confirmId > 0L ? -confirmId : presaleOrderId;
     }
 
     private String resolveOwnershipName(ErpInboundOrderEntity inboundOrder, Map<Long, String> ownershipMap) {
@@ -2761,16 +2791,20 @@ implements ErpSaleOrderService {
         }
         HashMap<Long, ErpInboundOrderEntity> inboundOrderMap = new HashMap<Long, ErpInboundOrderEntity>();
         ArrayList<Long> presaleOrderIds = new ArrayList<Long>();
+        ArrayList<Long> confirmIds = new ArrayList<Long>();
         for (ErpInboundOrderEntity inboundOrder : this.erpInboundOrderDao.selectBatchIds(inboundOrderIds)) {
             inboundOrderMap.put(inboundOrder.getId(), inboundOrder);
             if (inboundOrder.getPresaleOrderId() != null && !presaleOrderIds.contains(inboundOrder.getPresaleOrderId())) {
                 presaleOrderIds.add(inboundOrder.getPresaleOrderId());
             }
+            if (inboundOrder.getConfirmId() != null && !confirmIds.contains(inboundOrder.getConfirmId())) {
+                confirmIds.add(inboundOrder.getConfirmId());
+            }
         }
-        Map<Long, String> ownershipMap = this.loadOwnershipNameMap(presaleOrderIds);
+        Map<Long, String> ownershipMap = this.loadOwnershipNameMap(presaleOrderIds, confirmIds);
         for (ErpSaleOrderItemEntity item : items) {
             if (item == null) continue;
-            item.setOwnershipName(this.resolveOwnershipName(inboundOrderMap.get(item.getSourceInboundOrderId()), ownershipMap));
+            item.setOwnershipName(this.resolveOwnershipNameByConfirm(inboundOrderMap.get(item.getSourceInboundOrderId()), ownershipMap));
         }
     }
 

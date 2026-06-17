@@ -6,6 +6,7 @@
     (
       SELECT
         a.presale_order_id,
+        a.confirm_id,
         CASE
           WHEN MAX(CASE WHEN fp.payment_type = 1 AND COALESCE(fl.status, 0) != 1 THEN 1 ELSE 0 END) = 1
             THEN CONCAT('资方-', COALESCE(MAX(CASE
@@ -18,7 +19,7 @@
       FROM erp_funder_payment_allocation a
       INNER JOIN erp_funder_payment fp ON fp.id = a.payment_id
       LEFT JOIN erp_funder_loan fl ON fl.allocation_id = a.id
-      GROUP BY a.presale_order_id
+      GROUP BY a.presale_order_id, a.confirm_id
     )
   </sql>
 
@@ -89,7 +90,10 @@
     FROM erp_inbound_order_item i
     INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
     LEFT JOIN erp_product p ON p.id = i.product_id
-    LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = io.presale_order_id
+    LEFT JOIN <include refid="presaleOwnership"/> owner ON (
+      (io.confirm_id IS NOT NULL AND owner.confirm_id = io.confirm_id)
+      OR (io.confirm_id IS NULL AND owner.confirm_id IS NULL AND owner.presale_order_id = io.presale_order_id)
+    )
     LEFT JOIN (
       SELECT
         soi.source_inbound_item_id,
@@ -296,7 +300,10 @@
           INNER JOIN erp_presale_packing_batch b ON b.packing_item_id = pi.id
           LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
-          LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = io.presale_order_id
+          LEFT JOIN <include refid="presaleOwnership"/> owner ON (
+            (io.confirm_id IS NOT NULL AND owner.confirm_id = io.confirm_id)
+            OR (io.confirm_id IS NULL AND owner.confirm_id IS NULL AND owner.presale_order_id = io.presale_order_id)
+          )
           LEFT JOIN (
             SELECT
               soi.source_inbound_item_id,
@@ -370,7 +377,10 @@
           INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
           LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
           LEFT JOIN erp_product p ON p.id = i.product_id
-          LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = io.presale_order_id
+          LEFT JOIN <include refid="presaleOwnership"/> owner ON (
+            (io.confirm_id IS NOT NULL AND owner.confirm_id = io.confirm_id)
+            OR (io.confirm_id IS NULL AND owner.confirm_id IS NULL AND owner.presale_order_id = io.presale_order_id)
+          )
           LEFT JOIN (
             SELECT
               i2.id AS inbound_item_id,
@@ -475,7 +485,10 @@
     INNER JOIN erp_presale_order po ON po.id = pp.presale_order_id
     LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = po.id
     LEFT JOIN erp_product p ON p.id = pi.product_id
-    LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = po.id
+    LEFT JOIN <include refid="presaleOwnership"/> owner ON (
+      (pp.confirm_id IS NOT NULL AND owner.confirm_id = pp.confirm_id)
+      OR (pp.confirm_id IS NULL AND owner.confirm_id IS NULL AND owner.presale_order_id = po.id)
+    )
     LEFT JOIN (
       SELECT packing_item_id, MIN(production_date) AS production_date, MIN(expiry_date) AS expiry_date
       FROM erp_presale_packing_batch
@@ -580,7 +593,10 @@
     LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = po.id
     INNER JOIN erp_presale_packing_batch b ON b.packing_item_id = pi.id
     LEFT JOIN erp_product p ON p.id = pi.product_id
-    LEFT JOIN <include refid="presaleOwnership"/> owner ON owner.presale_order_id = po.id
+    LEFT JOIN <include refid="presaleOwnership"/> owner ON (
+      (pp.confirm_id IS NOT NULL AND owner.confirm_id = pp.confirm_id)
+      OR (pp.confirm_id IS NULL AND owner.confirm_id IS NULL AND owner.presale_order_id = po.id)
+    )
     LEFT JOIN (
       SELECT
         soi.source_presale_order_id,
