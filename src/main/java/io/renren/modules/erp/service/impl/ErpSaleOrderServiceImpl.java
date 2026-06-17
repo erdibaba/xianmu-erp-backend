@@ -30,6 +30,9 @@ import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.Query;
 import io.renren.modules.erp.dao.ErpInboundOrderDao;
 import io.renren.modules.erp.dao.ErpInboundOrderItemDao;
+import io.renren.modules.erp.dao.ErpFunderLoanDao;
+import io.renren.modules.erp.dao.ErpFunderPaymentAllocationDao;
+import io.renren.modules.erp.dao.ErpFunderPaymentDao;
 import io.renren.modules.erp.dao.ErpPartnerDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderItemDao;
@@ -49,6 +52,9 @@ import io.renren.modules.erp.dao.ErpStockLedgerDao;
 import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
 import io.renren.modules.erp.entity.ErpInboundOrderItemEntity;
+import io.renren.modules.erp.entity.ErpFunderLoanEntity;
+import io.renren.modules.erp.entity.ErpFunderPaymentAllocationEntity;
+import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderItemEntity;
@@ -187,6 +193,12 @@ implements ErpSaleOrderService {
     private ErpOcrService erpOcrService;
     @Autowired
     private ErpExpenseService erpExpenseService;
+    @Autowired
+    private ErpFunderPaymentAllocationDao erpFunderPaymentAllocationDao;
+    @Autowired
+    private ErpFunderPaymentDao erpFunderPaymentDao;
+    @Autowired
+    private ErpFunderLoanDao erpFunderLoanDao;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -1219,6 +1231,7 @@ implements ErpSaleOrderService {
                 allocated.setWarehouseName(candidate.inboundOrder.getWarehouseName());
                 allocated.setBrandId(candidate.inboundOrder.getBrandId());
                 allocated.setBrandName(candidate.inboundOrder.getBrandName());
+                allocated.setOwnershipName(candidate.ownershipName);
                 allocated.setInboundDate(candidate.inboundOrder.getCreateTime());
                 allocated.setProductionDate(candidate.inboundItem.getProductionDate());
                 allocated.setExpiryDate(candidate.inboundItem.getExpiryDate());
@@ -1309,6 +1322,13 @@ implements ErpSaleOrderService {
         if (inboundOrderMap.isEmpty()) {
             return Collections.emptyMap();
         }
+        ArrayList<Long> presaleOrderIds = new ArrayList<Long>();
+        for (ErpInboundOrderEntity order : inboundOrderMap.values()) {
+            if (order.getPresaleOrderId() != null && !presaleOrderIds.contains(order.getPresaleOrderId())) {
+                presaleOrderIds.add(order.getPresaleOrderId());
+            }
+        }
+        Map<Long, String> ownershipMap = this.loadOwnershipNameMap(presaleOrderIds);
         QueryWrapper saleItemWrapper = (QueryWrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_type", (Object)SALE_TYPE_SPOT)).in((Object)"source_inbound_item_id", inboundItemIds);
         if (excludeOrderId != null && excludeOrderId > 0L) {
             saleItemWrapper.ne((Object)"sale_order_id", (Object)excludeOrderId);
@@ -1330,6 +1350,7 @@ implements ErpSaleOrderService {
             candidate.inboundItem = inboundItem;
             candidate.product = product;
             candidate.availableBoxes = available;
+            candidate.ownershipName = this.resolveOwnershipName(inboundOrder, ownershipMap);
             ArrayList<StockCandidate> list = (ArrayList<StockCandidate>)result.get(product.getId());
             if (list == null) {
                 list = new ArrayList<StockCandidate>();
@@ -1356,6 +1377,108 @@ implements ErpSaleOrderService {
             Collections.sort(list, comparator);
         }
         return result;
+    }
+
+    private Map<Long, String> loadOwnershipNameMap(List<Long> presaleOrderIds) {
+        HashMap<Long, String> result = new HashMap<Long, String>();
+        if (presaleOrderIds == null || presaleOrderIds.isEmpty()) {
+            return result;
+        }
+        List<ErpFunderPaymentAllocationEntity> allocations = this.erpFunderPaymentAllocationDao.selectList((Wrapper)new QueryWrapper<ErpFunderPaymentAllocationEntity>()
+                .in("presale_order_id", presaleOrderIds));
+        if (allocations == null || allocations.isEmpty()) {
+            return result;
+        }
+        ArrayList<Long> paymentIds = new ArrayList<Long>();
+        ArrayList<Long> allocationIds = new ArrayList<Long>();
+        for (ErpFunderPaymentAllocationEntity allocation : allocations) {
+            if (allocation == null) continue;
+            if (allocation.getPaymentId() != null && !paymentIds.contains(allocation.getPaymentId())) {
+                paymentIds.add(allocation.getPaymentId());
+            }
+            if (allocation.getId() != null) {
+                allocationIds.add(allocation.getId());
+            }
+        }
+        HashMap<Long, ErpFunderPaymentEntity> paymentMap = new HashMap<Long, ErpFunderPaymentEntity>();
+        if (!paymentIds.isEmpty()) {
+            for (ErpFunderPaymentEntity payment : this.erpFunderPaymentDao.selectBatchIds(paymentIds)) {
+                paymentMap.put(payment.getId(), payment);
+            }
+        }
+        HashMap<Long, List<ErpFunderLoanEntity>> loanMap = new HashMap<Long, List<ErpFunderLoanEntity>>();
+        if (!allocationIds.isEmpty()) {
+            List<ErpFunderLoanEntity> loans = this.erpFunderLoanDao.selectList((Wrapper)new QueryWrapper<ErpFunderLoanEntity>().in("allocation_id", allocationIds));
+            for (ErpFunderLoanEntity loan : loans) {
+                if (loan == null || loan.getAllocationId() == null) continue;
+                List<ErpFunderLoanEntity> list = loanMap.get(loan.getAllocationId());
+                if (list == null) {
+                    list = new ArrayList<ErpFunderLoanEntity>();
+                    loanMap.put(loan.getAllocationId(), list);
+                }
+                list.add(loan);
+            }
+        }
+        HashMap<Long, OwnershipState> stateMap = new HashMap<Long, OwnershipState>();
+        for (ErpFunderPaymentAllocationEntity allocation : allocations) {
+            if (allocation == null || allocation.getPresaleOrderId() == null) continue;
+            ErpFunderPaymentEntity payment = paymentMap.get(allocation.getPaymentId());
+            if (payment == null) continue;
+            OwnershipState state = stateMap.get(allocation.getPresaleOrderId());
+            if (state == null) {
+                state = new OwnershipState();
+                stateMap.put(allocation.getPresaleOrderId(), state);
+            }
+            Integer paymentType = payment.getPaymentType();
+            if (paymentType != null && (paymentType == 1 || paymentType == 2)) {
+                state.hasPayment = true;
+            }
+            if (paymentType != null && paymentType == 1 && this.hasUnsettledFunderLoan(loanMap.get(allocation.getId()))) {
+                state.hasUnsettledFunder = true;
+                state.funderName = this.firstNonBlank(this.firstUnsettledFunderName(loanMap.get(allocation.getId())), payment.getFunderName(), "未知资方");
+            }
+        }
+        for (Map.Entry<Long, OwnershipState> entry : stateMap.entrySet()) {
+            OwnershipState state = entry.getValue();
+            if (state.hasUnsettledFunder) {
+                result.put(entry.getKey(), "资方-" + this.firstNonBlank(state.funderName, "未知资方"));
+            } else if (state.hasPayment) {
+                result.put(entry.getKey(), "鲜牧");
+            }
+        }
+        return result;
+    }
+
+    private boolean hasUnsettledFunderLoan(List<ErpFunderLoanEntity> loans) {
+        if (loans == null || loans.isEmpty()) {
+            return true;
+        }
+        for (ErpFunderLoanEntity loan : loans) {
+            if (loan == null || loan.getStatus() == null || loan.getStatus() != 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String firstUnsettledFunderName(List<ErpFunderLoanEntity> loans) {
+        if (loans == null) {
+            return "";
+        }
+        for (ErpFunderLoanEntity loan : loans) {
+            if (loan == null || loan.getStatus() != null && loan.getStatus() == 1) continue;
+            if (StringUtils.isNotBlank((String)loan.getFunderName())) {
+                return loan.getFunderName();
+            }
+        }
+        return "";
+    }
+
+    private String resolveOwnershipName(ErpInboundOrderEntity inboundOrder, Map<Long, String> ownershipMap) {
+        if (inboundOrder == null || inboundOrder.getPresaleOrderId() == null || ownershipMap == null) {
+            return "未确认";
+        }
+        return this.firstNonBlank(ownershipMap.get(inboundOrder.getPresaleOrderId()), "未确认");
     }
 
     private void validateSpotRequestItems(List<ErpSaleOrderItemEntity> itemList, boolean requireSalePrice) {
@@ -2606,6 +2729,7 @@ implements ErpSaleOrderService {
         List files = this.erpSaleOrderFileDao.selectList((Wrapper)((QueryWrapper)new QueryWrapper().eq((Object)"sale_order_id", (Object)order.getId())).orderByAsc((Object[])new String[]{"file_type", "line_no", "id"}));
         order.setAllocationItemList(new ArrayList<ErpSaleOrderItemEntity>());
         if (SALE_TYPE_SPOT.equals(order.getSaleType())) {
+            this.enrichSaleItemOwnership(items);
             order.setAllocationItemList(items);
             order.setItemList(this.buildSpotRequestItems(items));
         } else {
@@ -2620,6 +2744,34 @@ implements ErpSaleOrderService {
         order.setOutboundReceipt(this.loadOutboundReceipt(order.getId()));
         order.setOutboundBatchList(this.loadOutboundBatches(order.getId()));
         order.setOutboundSummaryList(this.buildOutboundSummary(order.getId()));
+    }
+
+    private void enrichSaleItemOwnership(List<ErpSaleOrderItemEntity> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        ArrayList<Long> inboundOrderIds = new ArrayList<Long>();
+        for (ErpSaleOrderItemEntity item : items) {
+            if (item != null && item.getSourceInboundOrderId() != null && !inboundOrderIds.contains(item.getSourceInboundOrderId())) {
+                inboundOrderIds.add(item.getSourceInboundOrderId());
+            }
+        }
+        if (inboundOrderIds.isEmpty()) {
+            return;
+        }
+        HashMap<Long, ErpInboundOrderEntity> inboundOrderMap = new HashMap<Long, ErpInboundOrderEntity>();
+        ArrayList<Long> presaleOrderIds = new ArrayList<Long>();
+        for (ErpInboundOrderEntity inboundOrder : this.erpInboundOrderDao.selectBatchIds(inboundOrderIds)) {
+            inboundOrderMap.put(inboundOrder.getId(), inboundOrder);
+            if (inboundOrder.getPresaleOrderId() != null && !presaleOrderIds.contains(inboundOrder.getPresaleOrderId())) {
+                presaleOrderIds.add(inboundOrder.getPresaleOrderId());
+            }
+        }
+        Map<Long, String> ownershipMap = this.loadOwnershipNameMap(presaleOrderIds);
+        for (ErpSaleOrderItemEntity item : items) {
+            if (item == null) continue;
+            item.setOwnershipName(this.resolveOwnershipName(inboundOrderMap.get(item.getSourceInboundOrderId()), ownershipMap));
+        }
     }
 
     private List<ErpSaleOrderItemEntity> buildSpotRequestItems(List<ErpSaleOrderItemEntity> items) {
@@ -3209,8 +3361,18 @@ implements ErpSaleOrderService {
         private ErpInboundOrderItemEntity inboundItem;
         private ErpProductEntity product;
         private int availableBoxes;
+        private String ownershipName;
 
         private StockCandidate() {
+        }
+    }
+
+    private static class OwnershipState {
+        private boolean hasPayment;
+        private boolean hasUnsettledFunder;
+        private String funderName;
+
+        private OwnershipState() {
         }
     }
 }
