@@ -77,6 +77,11 @@ def load_pdf_image_items(file_path):
             image_path = Path(temp_dir) / f"page-{page_index + 1}.png"
             image.save(image_path)
             items, lines = load_image_items(image_path, ocr)
+            page_offset = page_index * (image.height + 200)
+            for item in items:
+                item["top"] += page_offset
+                item["bottom"] += page_offset
+                item["cy"] += page_offset
             all_items.extend(items)
             all_lines.extend(lines)
     return all_items, all_lines

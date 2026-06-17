@@ -2,6 +2,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import erp_ocr
@@ -29,6 +30,42 @@ def normalize_date(value):
     value = (value or "").strip()
     if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
         return value + " 00:00:00"
+    return None
+
+
+def valid_date(year, month, day):
+    try:
+        date(year, month, day)
+        return True
+    except ValueError:
+        return False
+
+
+def normalize_short_date(value):
+    value = (value or "").strip()
+    value = value.replace("[", "").replace("]", "").replace("年", ".").replace("月", ".").replace("日", "")
+    value = re.sub(r"[^0-9.\-]", "", value)
+    match = re.match(r"^(20)?(\d{2})[.\-](\d{1,2})[.\-](\d{1,2})", value)
+    if match:
+        year = int(match.group(2)) + 2000
+        month = int(match.group(3))
+        day = int(match.group(4))
+        if year >= 2020 and valid_date(year, month, day):
+            return f"{year:04d}-{month:02d}-{day:02d} 00:00:00"
+    match = re.match(r"^(\d{2})(\d{1,2})[.\-](\d{1,2})", value)
+    if match:
+        year = int(match.group(1)) + 2000
+        month = int(match.group(2))
+        day = int(match.group(3))
+        if year >= 2020 and valid_date(year, month, day):
+            return f"{year:04d}-{month:02d}-{day:02d} 00:00:00"
+    match = re.match(r"^(\d{2})(\d)(\d{1,2})$", value)
+    if match:
+        year = int(match.group(1)) + 2000
+        month = int(match.group(2))
+        day = int(match.group(3))
+        if year >= 2020 and valid_date(year, month, day):
+            return f"{year:04d}-{month:02d}-{day:02d} 00:00:00"
     return None
 
 
@@ -104,10 +141,117 @@ def likely_product_code(token):
     token = (token or "").strip()
     if re.search(r"[A-Z]*RU\d{7}", token, re.IGNORECASE) or re.search(r"20\d{2}-\d{2}-\d{2}", token):
         return None
-    match = re.match(r"^C?(\d{5})-?$", token, re.IGNORECASE)
+    match = re.match(r"^[CO]?(\d{5})-?$", token, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    match = re.match(r"^[0O](\d{5})-?$", token, re.IGNORECASE)
     if not match:
         return None
     return match.group(1)
+
+
+def parse_wanyue_inbound_row(tokens):
+    tokens = merge_date_tokens([token.strip() for token in tokens if token and token.strip()])
+    row_text = " | ".join(tokens)
+    if "合计" in row_text or "商品代码" in row_text or "实收客户板数" in row_text:
+        return None
+
+    product_code = None
+    product_code_index = -1
+    for idx, token in enumerate(tokens):
+        code = likely_product_code(token)
+        if code:
+            product_code = code
+            product_code_index = idx
+            break
+    if not product_code:
+        return None
+
+    product_name_parts = []
+    for token in tokens[product_code_index + 1:]:
+        if "冰鲜" in token or product_name_parts:
+            product_name_parts.append(token)
+            if ")" in token or "）" in token:
+                break
+            continue
+        if re.match(r"^[5S][*#\+]\d+$", token) or normalize_short_date(token):
+            break
+    product_name = clean_product_name("".join(product_name_parts)) if product_name_parts else None
+    if not product_name:
+        for token in tokens:
+            if "冰鲜" in token:
+                product_name = clean_product_name(token)
+                break
+
+    production_date = None
+    for token in tokens[product_code_index + 1:]:
+        production_date = normalize_short_date(token)
+        if production_date:
+            break
+
+    temp_zone = None
+    if "冷冻" in row_text:
+        temp_zone = "冷冻"
+    elif "冷" in row_text:
+        temp_zone = "冷藏"
+
+    long_number_indexes = []
+    for idx, token in enumerate(tokens):
+        normalized = normalize_number_token(token)
+        if re.match(r"^\d{6,10}$", normalized):
+            value = int(normalized)
+            if value > 100000:
+                long_number_indexes.append((idx, value))
+    total_weight = None
+    weight_idx = -1
+    if long_number_indexes:
+        weight_idx, weight_value = long_number_indexes[0]
+        nearby = " ".join(tokens[max(0, weight_idx - 2): min(len(tokens), weight_idx + 3)])
+        if re.search(r"\b1\s*[.。]", nearby) and weight_value < 10000000:
+            weight_value += 10000000
+        total_weight = Decimal(weight_value) / Decimal("10000")
+
+    quantity_values = []
+    explicit_box_qty = None
+    for idx, token in enumerate(tokens):
+        if idx <= product_code_index or (weight_idx >= 0 and idx <= weight_idx):
+            continue
+        if re.search(r"20\d{2}", token) or normalize_short_date(token):
+            continue
+        box_match = re.search(r"(\d{1,4})\s*箱", token)
+        if box_match:
+            explicit_box_qty = int(box_match.group(1))
+            quantity_values.append(explicit_box_qty)
+            continue
+        normalized = normalize_number_token(token)
+        if re.match(r"^\d+$", normalized):
+            value = int(normalized)
+            if 0 < value <= 1000:
+                quantity_values.append(value)
+    if not quantity_values:
+        return None
+    expected_qty = max(quantity_values[-3:])
+    actual_qty = explicit_box_qty if explicit_box_qty is not None else quantity_values[-1]
+    if actual_qty <= 2 and expected_qty > 2:
+        actual_qty = expected_qty
+    if actual_qty * 2 < expected_qty:
+        actual_qty = expected_qty
+
+    return {
+        "productCode": product_code,
+        "skuCode": normalize_sku(product_code, extract_date_and_container(tokens)[1]),
+        "productName": product_name,
+        "specWeight": None,
+        "unit": "箱",
+        "expectedQty": expected_qty,
+        "actualQty": actual_qty,
+        "factoryNo": None,
+        "temperatureZone": temp_zone,
+        "productionDate": production_date,
+        "expiryDate": None,
+        "shelfLifeDays": None,
+        "totalWeightKg": dec_str(total_weight, "0.00") if total_weight is not None else None
+    }
 
 
 def parse_relaxed_inbound_row(tokens):
@@ -287,15 +431,21 @@ def parse_row_tokens(tokens):
 
 
 def parse_file(path):
-    items, _ = erp_ocr.load_image_items(path)
+    if Path(path).suffix.lower() == ".pdf":
+        items, _ = erp_ocr.load_pdf_image_items(path)
+    else:
+        items, _ = erp_ocr.load_image_items(path)
     rows = erp_ocr.group_rows(items, tolerance=18)
     text_rows = [" | ".join(row["texts"]) for row in rows]
     text = "\n".join(text_rows)
 
     header = {
-        "customerName": extract_header_value(text, r"客户[:：]\s*([^\n|]+)"),
-        "wmsOrderNo": extract_header_value(text, r"WMS订单号[:：]\s*([A-Z0-9]+)"),
-        "customerOrderNo": extract_header_value(text, r"客户订单号[:：]\s*([^\n|]+)"),
+        "customerName": extract_header_value(text, r"客户[:：]\s*([^\n|]+)")
+            or extract_header_value(text, r"货主名称\s*\|\s*([^\n|]+)"),
+        "wmsOrderNo": extract_header_value(text, r"WMS订单号[:：]\s*([A-Z0-9]+)")
+            or extract_header_value(text, r"\b(ASNEQ[0-9A-Z]+)\b"),
+        "customerOrderNo": extract_header_value(text, r"客户订单号[:：]\s*([^\n|]+)")
+            or extract_header_value(text, r"货主单号\s*\|\s*([^\n|]+)"),
         "driverName": extract_header_value(text, r"司机姓名[:：]\s*([^\s|]+)"),
         "driverPhone": extract_header_value(text, r"司机电话[:：]\s*([0-9]+)"),
         "idCardNo": extract_header_value(text, r"司机身份证[:：]?\s*([0-9Xx]+)"),
@@ -310,16 +460,15 @@ def parse_file(path):
         tokens = [token.strip() for token in rows[row_idx]["texts"] if token.strip()]
         row_text = " | ".join(tokens)
         if not table_started:
-            if "SKU" in row_text and "品名" in row_text:
+            if ("SKU" in row_text and "品名" in row_text) or ("商品代码" in row_text and "商品名称" in row_text):
                 table_started = True
             row_idx += 1
             continue
         if "发货人" in row_text or "第" in row_text and "页" in row_text:
             row_idx += 1
             continue
-        if "合计" in row_text and not re.search(r"\d{5}-?", row_text):
-            row_idx += 1
-            continue
+        if "合计" in row_text:
+            break
 
         combined = list(tokens)
         has_code = re.search(r"(?:C)?\d{5}", row_text) is not None
@@ -332,7 +481,7 @@ def parse_file(path):
                 combined.extend(next_tokens)
                 row_idx += 1
 
-        parsed = parse_row_tokens(combined)
+        parsed = parse_wanyue_inbound_row(combined) or parse_row_tokens(combined)
         if parsed:
             item_list.append(parsed)
         row_idx += 1
