@@ -38,4 +38,28 @@ public class ErpPresaleConfirmEntity implements Serializable {
 
   @TableField(exist = false)
   private List<ErpPresaleConfirmItemEntity> itemList;
+
+  @TableField(exist = false)
+  private String presaleOrderNo;
+
+  @TableField(exist = false)
+  private String sellerContractNo;
+
+  @TableField(exist = false)
+  private String customerReference;
+
+  @TableField(exist = false)
+  private Date presaleOrderDate;
+
+  @TableField(exist = false)
+  private Date presaleExpectedDate;
+
+  @TableField(exist = false)
+  private Integer packingUploaded;
+
+  @TableField(exist = false)
+  private Integer customsUploaded;
+
+  @TableField(exist = false)
+  private Integer quarantineUploaded;
 }

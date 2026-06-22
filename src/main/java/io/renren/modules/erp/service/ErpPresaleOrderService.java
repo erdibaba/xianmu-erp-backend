@@ -13,7 +13,11 @@ import java.util.Map;
 public interface ErpPresaleOrderService {
   PageUtils queryPage(Map<String, Object> params);
 
+  PageUtils queryConfirmPage(Map<String, Object> params);
+
   ErpPresaleOrderEntity getDetail(Long id);
+
+  ErpPresaleOrderEntity getDetail(Long id, Long confirmId);
 
   void saveOrder(ErpPresaleOrderEntity order, Long userId);
 
@@ -25,15 +29,21 @@ public interface ErpPresaleOrderService {
 
   void syncPackingProductMaster(ErpRecognizedPackingDraftVo draft);
 
-  ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, String attachmentType, MultipartFile file, Long userId) throws Exception;
+  ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId) throws Exception;
 
   ResponseEntity<byte[]> downloadEstimateFile(Long id);
 
   ResponseEntity<byte[]> downloadConfirmFile(Long id);
 
+  ResponseEntity<byte[]> downloadConfirmFileByConfirmId(Long confirmId);
+
   ResponseEntity<byte[]> downloadPackingFile(Long id);
 
+  ResponseEntity<byte[]> downloadPackingFileByConfirmId(Long confirmId);
+
   ResponseEntity<byte[]> downloadAttachmentFile(Long id, String attachmentType);
+
+  ResponseEntity<byte[]> downloadAttachmentFileByConfirmId(Long confirmId, String attachmentType);
 
   ResponseEntity<byte[]> downloadAttachmentFileById(Long attachmentId);
 }

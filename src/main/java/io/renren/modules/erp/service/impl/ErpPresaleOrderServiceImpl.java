@@ -43,6 +43,7 @@ import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +105,37 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   @Override
+  public PageUtils queryConfirmPage(Map<String, Object> params) {
+    String keyword = params.get("keyword") == null ? null : params.get("keyword").toString();
+    QueryWrapper<ErpPresaleConfirmEntity> wrapper = new QueryWrapper<ErpPresaleConfirmEntity>()
+        .orderByDesc("expected_arrival_date", "id");
+    List<Long> matchedPresaleIds = findPresaleIdsByKeyword(keyword);
+    if (StringUtils.isNotBlank(keyword)) {
+      wrapper.and(q -> {
+        q.like("contract_no", keyword)
+            .or().like("container_no", keyword)
+            .or().like("brand_name", keyword)
+            .or().like("buyer_partner_name", keyword);
+        if (!matchedPresaleIds.isEmpty()) {
+          q.or().in("presale_order_id", matchedPresaleIds);
+        }
+      });
+    }
+    IPage<ErpPresaleConfirmEntity> page = erpPresaleConfirmDao.selectPage(
+        new Query<ErpPresaleConfirmEntity>().getPage(params), wrapper);
+    for (ErpPresaleConfirmEntity confirm : page.getRecords()) {
+      fillConfirmPageFields(confirm);
+    }
+    return new PageUtils(page);
+  }
+
+  @Override
   public ErpPresaleOrderEntity getDetail(Long id) {
+    return getDetail(id, null);
+  }
+
+  @Override
+  public ErpPresaleOrderEntity getDetail(Long id, Long confirmId) {
     ErpPresaleOrderEntity entity = this.getById(id);
     if (entity == null) {
       return null;
@@ -112,14 +143,15 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     entity.setItemList(erpPresaleOrderItemDao.selectList(
         new QueryWrapper<ErpPresaleOrderItemEntity>().eq("presale_order_id", id).orderByAsc("line_no", "id")));
     List<ErpPresaleConfirmEntity> confirmList = loadConfirmList(id);
-    ErpPresaleConfirmEntity confirm = confirmList.isEmpty() ? null : confirmList.get(0);
+    ErpPresaleConfirmEntity confirm = resolveActiveConfirm(confirmList, confirmId);
     ErpPresalePackingEntity packing = loadPackingForConfirm(id, confirm == null ? null : confirm.getId());
     entity.setConfirmInfo(confirm);
     entity.setConfirmList(confirmList);
     entity.setConfirmCount(confirmList.size());
     entity.setPackingInfo(packing);
-    List<ErpPresaleAttachmentEntity> quarantineList = listAttachments(id, "QUARANTINE");
-    entity.setCustomsInfo(findAttachment(id, "CUSTOMS"));
+    Long activeConfirmId = confirm == null ? null : confirm.getId();
+    List<ErpPresaleAttachmentEntity> quarantineList = listAttachments(id, activeConfirmId, "QUARANTINE");
+    entity.setCustomsInfo(findAttachment(id, activeConfirmId, "CUSTOMS"));
     entity.setQuarantineInfo(quarantineList.isEmpty() ? null : quarantineList.get(0));
     entity.setQuarantineList(quarantineList);
     entity.setConfirmUploaded(confirmList.isEmpty() ? 0 : 1);
@@ -127,6 +159,60 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     entity.setCustomsUploaded(entity.getCustomsInfo() == null ? 0 : 1);
     entity.setQuarantineUploaded(quarantineList.isEmpty() ? 0 : 1);
     return entity;
+  }
+
+  private List<Long> findPresaleIdsByKeyword(String keyword) {
+    if (StringUtils.isBlank(keyword)) {
+      return Collections.emptyList();
+    }
+    List<ErpPresaleOrderEntity> orders = this.list(new QueryWrapper<ErpPresaleOrderEntity>()
+        .select("id")
+        .and(q -> q.like("order_no", keyword)
+            .or().like("seller_contract_no", keyword)
+            .or().like("customer_reference", keyword)
+            .or().like("brand_name", keyword))
+        .last("limit 200"));
+    if (orders == null || orders.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<Long> ids = new ArrayList<>();
+    for (ErpPresaleOrderEntity order : orders) {
+      if (order.getId() != null) {
+        ids.add(order.getId());
+      }
+    }
+    return ids;
+  }
+
+  private void fillConfirmPageFields(ErpPresaleConfirmEntity confirm) {
+    if (confirm == null) {
+      return;
+    }
+    ErpPresaleOrderEntity order = confirm.getPresaleOrderId() == null ? null : this.getById(confirm.getPresaleOrderId());
+    if (order != null) {
+      confirm.setPresaleOrderNo(order.getOrderNo());
+      confirm.setSellerContractNo(order.getSellerContractNo());
+      confirm.setCustomerReference(order.getCustomerReference());
+      confirm.setPresaleOrderDate(order.getOrderDate());
+      confirm.setPresaleExpectedDate(order.getExpectedDate());
+    }
+    confirm.setPackingUploaded(hasPacking(confirm.getPresaleOrderId(), confirm.getId()) ? 1 : 0);
+    confirm.setCustomsUploaded(hasAttachment(confirm.getPresaleOrderId(), confirm.getId(), "CUSTOMS") ? 1 : 0);
+    confirm.setQuarantineUploaded(hasAttachment(confirm.getPresaleOrderId(), confirm.getId(), "QUARANTINE") ? 1 : 0);
+  }
+
+  private ErpPresaleConfirmEntity resolveActiveConfirm(List<ErpPresaleConfirmEntity> confirmList, Long confirmId) {
+    if (confirmList == null || confirmList.isEmpty()) {
+      return null;
+    }
+    if (confirmId != null) {
+      for (ErpPresaleConfirmEntity confirm : confirmList) {
+        if (confirm.getId() != null && String.valueOf(confirm.getId()).equals(String.valueOf(confirmId))) {
+          return confirm;
+        }
+      }
+    }
+    return confirmList.get(0);
   }
 
   @Override
@@ -230,10 +316,16 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   @Override
   @Transactional(rollbackFor = Exception.class)
-  public ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, String attachmentType, MultipartFile file, Long userId) throws Exception {
+  public ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId) throws Exception {
     ErpPresaleOrderEntity order = this.getById(presaleOrderId);
     if (order == null) {
       throw new RuntimeException("预销售单不存在，无法上传附件");
+    }
+    if (confirmId != null) {
+      ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(confirmId);
+      if (confirm == null || !String.valueOf(presaleOrderId).equals(String.valueOf(confirm.getPresaleOrderId()))) {
+        throw new RuntimeException("客户订单确认函不存在，无法上传附件");
+      }
     }
     String normalizedType = StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType));
     if (!"CUSTOMS".equals(normalizedType) && !"QUARANTINE".equals(normalizedType)) {
@@ -244,15 +336,17 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     try {
       file.transferTo(tempFile.toFile());
       Path savedPath = saveAttachmentFile(file, tempFile, suffix, normalizedType);
-      ErpPresaleAttachmentEntity existing = "QUARANTINE".equals(normalizedType) ? null : findAttachment(presaleOrderId, normalizedType);
+      ErpPresaleAttachmentEntity existing = "QUARANTINE".equals(normalizedType) ? null : findAttachment(presaleOrderId, confirmId, normalizedType);
       Date now = new Date();
       if (existing == null) {
         existing = new ErpPresaleAttachmentEntity();
         existing.setPresaleOrderId(presaleOrderId);
+        existing.setConfirmId(confirmId);
         existing.setAttachmentType(normalizedType);
         existing.setCreateUserId(userId);
         existing.setCreateTime(now);
       }
+      existing.setConfirmId(confirmId);
       existing.setFilePath(savedPath.toAbsolutePath().toString());
       existing.setFileName(extractFileName(savedPath.toString()));
       existing.setUpdateTime(now);
@@ -281,6 +375,12 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   @Override
+  public ResponseEntity<byte[]> downloadConfirmFileByConfirmId(Long confirmId) {
+    ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(confirmId);
+    return downloadFile(confirm == null ? null : confirm.getFilePath(), confirm == null ? null : confirm.getFileName());
+  }
+
+  @Override
   public ResponseEntity<byte[]> downloadPackingFile(Long id) {
     ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
         new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", id).last("limit 1"));
@@ -288,8 +388,23 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   }
 
   @Override
+  public ResponseEntity<byte[]> downloadPackingFileByConfirmId(Long confirmId) {
+    ErpPresalePackingEntity packing = erpPresalePackingDao.selectOne(
+        new QueryWrapper<ErpPresalePackingEntity>().eq("confirm_id", confirmId).last("limit 1"));
+    return downloadFile(packing == null ? null : packing.getFilePath(), packing == null ? null : packing.getFileName());
+  }
+
+  @Override
   public ResponseEntity<byte[]> downloadAttachmentFile(Long id, String attachmentType) {
     ErpPresaleAttachmentEntity attachment = findAttachment(id, attachmentType);
+    return downloadFile(attachment == null ? null : attachment.getFilePath(), attachment == null ? null : attachment.getFileName());
+  }
+
+  @Override
+  public ResponseEntity<byte[]> downloadAttachmentFileByConfirmId(Long confirmId, String attachmentType) {
+    ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(confirmId);
+    Long presaleOrderId = confirm == null ? null : confirm.getPresaleOrderId();
+    ErpPresaleAttachmentEntity attachment = findAttachment(presaleOrderId, confirmId, attachmentType);
     return downloadFile(attachment == null ? null : attachment.getFilePath(), attachment == null ? null : attachment.getFileName());
   }
 
@@ -918,25 +1033,63 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     return erpPresalePackingDao.selectCount(new QueryWrapper<ErpPresalePackingEntity>().eq("presale_order_id", presaleOrderId)) > 0;
   }
 
+  private boolean hasPacking(Long presaleOrderId, Long confirmId) {
+    QueryWrapper<ErpPresalePackingEntity> wrapper = new QueryWrapper<ErpPresalePackingEntity>();
+    if (confirmId != null) {
+      wrapper.eq("confirm_id", confirmId);
+    } else {
+      wrapper.eq("presale_order_id", presaleOrderId);
+    }
+    return erpPresalePackingDao.selectCount(wrapper) > 0;
+  }
+
   private boolean hasAttachment(Long presaleOrderId, String attachmentType) {
     return erpPresaleAttachmentDao.selectCount(new QueryWrapper<ErpPresaleAttachmentEntity>()
         .eq("presale_order_id", presaleOrderId)
         .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)))) > 0;
   }
 
+  private boolean hasAttachment(Long presaleOrderId, Long confirmId, String attachmentType) {
+    QueryWrapper<ErpPresaleAttachmentEntity> wrapper = new QueryWrapper<ErpPresaleAttachmentEntity>()
+        .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)));
+    if (confirmId != null) {
+      wrapper.eq("confirm_id", confirmId);
+    } else {
+      wrapper.eq("presale_order_id", presaleOrderId);
+    }
+    return erpPresaleAttachmentDao.selectCount(wrapper) > 0;
+  }
+
   private ErpPresaleAttachmentEntity findAttachment(Long presaleOrderId, String attachmentType) {
-    return erpPresaleAttachmentDao.selectOne(new QueryWrapper<ErpPresaleAttachmentEntity>()
-        .eq("presale_order_id", presaleOrderId)
-        .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)))
+    return findAttachment(presaleOrderId, null, attachmentType);
+  }
+
+  private ErpPresaleAttachmentEntity findAttachment(Long presaleOrderId, Long confirmId, String attachmentType) {
+    QueryWrapper<ErpPresaleAttachmentEntity> wrapper = new QueryWrapper<ErpPresaleAttachmentEntity>()
+        .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)));
+    if (confirmId != null) {
+      wrapper.eq("confirm_id", confirmId);
+    } else {
+      wrapper.eq("presale_order_id", presaleOrderId);
+    }
+    return erpPresaleAttachmentDao.selectOne(wrapper
         .orderByDesc("id")
         .last("limit 1"));
   }
 
   private List<ErpPresaleAttachmentEntity> listAttachments(Long presaleOrderId, String attachmentType) {
-    return erpPresaleAttachmentDao.selectList(new QueryWrapper<ErpPresaleAttachmentEntity>()
-        .eq("presale_order_id", presaleOrderId)
-        .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)))
-        .orderByDesc("id"));
+    return listAttachments(presaleOrderId, null, attachmentType);
+  }
+
+  private List<ErpPresaleAttachmentEntity> listAttachments(Long presaleOrderId, Long confirmId, String attachmentType) {
+    QueryWrapper<ErpPresaleAttachmentEntity> wrapper = new QueryWrapper<ErpPresaleAttachmentEntity>()
+        .eq("attachment_type", StringUtils.upperCase(StringUtils.trimToEmpty(attachmentType)));
+    if (confirmId != null) {
+      wrapper.eq("confirm_id", confirmId);
+    } else {
+      wrapper.eq("presale_order_id", presaleOrderId);
+    }
+    return erpPresaleAttachmentDao.selectList(wrapper.orderByDesc("id"));
   }
 
   private String getSuffix(String filename) {

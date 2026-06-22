@@ -29,10 +29,18 @@ public class ErpPresaleOrderController extends AbstractController {
     return R.ok().put("page", page);
   }
 
+  @GetMapping("/confirm-list")
+  @RequiresPermissions("erp:tradeorder:list")
+  public R confirmList(@RequestParam Map<String, Object> params) {
+    PageUtils page = erpPresaleOrderService.queryConfirmPage(params);
+    return R.ok().put("page", page);
+  }
+
   @GetMapping("/info/{id}")
   @RequiresPermissions("erp:tradeorder:info")
-  public R info(@PathVariable("id") Long id) {
-    return R.ok().put("presaleOrder", erpPresaleOrderService.getDetail(id));
+  public R info(@PathVariable("id") Long id,
+                @RequestParam(value = "confirmId", required = false) Long confirmId) {
+    return R.ok().put("presaleOrder", erpPresaleOrderService.getDetail(id, confirmId));
   }
 
   @PostMapping("/save")
@@ -73,6 +81,7 @@ public class ErpPresaleOrderController extends AbstractController {
   @PostMapping("/upload-attachment")
   @RequiresPermissions("erp:tradeorder:save")
   public R uploadAttachment(@RequestParam("presaleOrderId") Long presaleOrderId,
+                            @RequestParam(value = "confirmId", required = false) Long confirmId,
                             @RequestParam("attachmentType") String attachmentType,
                             @RequestParam("file") MultipartFile file) throws Exception {
     if (presaleOrderId == null || presaleOrderId <= 0) {
@@ -85,7 +94,7 @@ public class ErpPresaleOrderController extends AbstractController {
     if (!"CUSTOMS".equals(normalizedType) && !"QUARANTINE".equals(normalizedType)) {
       return R.error("附件类型不支持");
     }
-    ErpPresaleAttachmentEntity attachment = erpPresaleOrderService.uploadAttachment(presaleOrderId, normalizedType, file, getUserId());
+    ErpPresaleAttachmentEntity attachment = erpPresaleOrderService.uploadAttachment(presaleOrderId, confirmId, normalizedType, file, getUserId());
     return R.ok().put("attachment", attachment);
   }
 
@@ -101,10 +110,22 @@ public class ErpPresaleOrderController extends AbstractController {
     return erpPresaleOrderService.downloadConfirmFile(id);
   }
 
+  @GetMapping("/download/confirm-file/{confirmId}")
+  @RequiresPermissions("erp:tradeorder:info")
+  public ResponseEntity<byte[]> downloadConfirmFile(@PathVariable("confirmId") Long confirmId) {
+    return erpPresaleOrderService.downloadConfirmFileByConfirmId(confirmId);
+  }
+
   @GetMapping("/download/packing/{id}")
   @RequiresPermissions("erp:tradeorder:info")
   public ResponseEntity<byte[]> downloadPacking(@PathVariable("id") Long id) {
     return erpPresaleOrderService.downloadPackingFile(id);
+  }
+
+  @GetMapping("/download/packing-file/{confirmId}")
+  @RequiresPermissions("erp:tradeorder:info")
+  public ResponseEntity<byte[]> downloadPackingFile(@PathVariable("confirmId") Long confirmId) {
+    return erpPresaleOrderService.downloadPackingFileByConfirmId(confirmId);
   }
 
   @GetMapping("/download/customs/{id}")
@@ -113,10 +134,22 @@ public class ErpPresaleOrderController extends AbstractController {
     return erpPresaleOrderService.downloadAttachmentFile(id, "CUSTOMS");
   }
 
+  @GetMapping("/download/customs-file/{confirmId}")
+  @RequiresPermissions("erp:tradeorder:info")
+  public ResponseEntity<byte[]> downloadCustomsFile(@PathVariable("confirmId") Long confirmId) {
+    return erpPresaleOrderService.downloadAttachmentFileByConfirmId(confirmId, "CUSTOMS");
+  }
+
   @GetMapping("/download/quarantine/{id}")
   @RequiresPermissions("erp:tradeorder:info")
   public ResponseEntity<byte[]> downloadQuarantine(@PathVariable("id") Long id) {
     return erpPresaleOrderService.downloadAttachmentFile(id, "QUARANTINE");
+  }
+
+  @GetMapping("/download/quarantine-file/{confirmId}")
+  @RequiresPermissions("erp:tradeorder:info")
+  public ResponseEntity<byte[]> downloadQuarantineFile(@PathVariable("confirmId") Long confirmId) {
+    return erpPresaleOrderService.downloadAttachmentFileByConfirmId(confirmId, "QUARANTINE");
   }
 
   @GetMapping("/download/attachment/{attachmentId}")
