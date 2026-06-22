@@ -6,6 +6,8 @@ import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
+import io.renren.modules.erp.entity.ErpDriverEntity;
+import io.renren.modules.erp.service.ErpDriverService;
 import io.renren.modules.erp.service.ErpSaleOrderService;
 import io.renren.modules.erp.vo.ErpSalePresaleItemVo;
 import io.renren.modules.erp.vo.ErpSalePresaleOrderVo;
@@ -32,6 +34,8 @@ import org.springframework.web.multipart.MultipartFile;
 public class ErpSaleOrderController extends AbstractController {
   @Autowired
   private ErpSaleOrderService erpSaleOrderService;
+  @Autowired
+  private ErpDriverService erpDriverService;
 
   @GetMapping("/list")
   @RequiresPermissions("erp:tradeorder:list")
@@ -179,13 +183,33 @@ public class ErpSaleOrderController extends AbstractController {
 
   @PostMapping("/outbound/batch/create")
   @RequiresPermissions("erp:tradeorder:update")
-  public R createOutboundBatch(@RequestBody Map<String, Object> params) {
-    Long saleOrderId = params.get("saleOrderId") == null ? null : Long.valueOf(String.valueOf(params.get("saleOrderId")));
-    if (saleOrderId == null || saleOrderId <= 0) {
+  public R createOutboundBatch(@RequestBody ErpSaleOutboundBatchEntity batch) {
+    if (batch == null || batch.getSaleOrderId() == null || batch.getSaleOrderId() <= 0) {
       return R.error("请先选择销售单");
     }
     try {
-      return R.ok().put("batch", erpSaleOrderService.createOutboundBatch(saleOrderId, getUserId()));
+      return R.ok().put("batch", erpSaleOrderService.createOutboundBatch(batch, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
+  @GetMapping("/outbound/driver/select")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R outboundDriverSelect(@RequestParam(value = "keyword", required = false) String keyword) {
+    Map<String, Object> params = new java.util.HashMap<String, Object>();
+    params.put("page", "1");
+    params.put("limit", "15");
+    params.put("keyword", keyword);
+    return R.ok().put("page", erpDriverService.queryPage(params));
+  }
+
+  @PostMapping("/outbound/driver/save")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R outboundDriverSave(@RequestBody ErpDriverEntity driver) {
+    try {
+      erpDriverService.saveDriver(driver, getUserId());
+      return R.ok().put("driver", driver);
     } catch (RuntimeException e) {
       return R.error(e.getMessage());
     }

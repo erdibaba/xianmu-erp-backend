@@ -45,6 +45,7 @@ import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundBatchDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptItemDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundPlanItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundScanDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundScanItemDao;
 import io.renren.modules.erp.dao.ErpSaleUploadNoticeDao;
@@ -67,6 +68,9 @@ import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundPlanItemEntity;
+import io.renren.modules.erp.entity.ErpDriverEntity;
+import io.renren.modules.erp.dao.ErpDriverDao;
 import io.renren.modules.erp.entity.ErpSaleOutboundScanEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundScanItemEntity;
 import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
@@ -159,6 +163,10 @@ implements ErpSaleOrderService {
     private ErpSaleOutboundReceiptDao erpSaleOutboundReceiptDao;
     @Autowired
     private ErpSaleOutboundReceiptItemDao erpSaleOutboundReceiptItemDao;
+    @Autowired
+    private ErpSaleOutboundPlanItemDao erpSaleOutboundPlanItemDao;
+    @Autowired
+    private ErpDriverDao erpDriverDao;
     @Autowired
     private ErpSaleOutboundScanDao erpSaleOutboundScanDao;
     @Autowired
@@ -494,7 +502,8 @@ implements ErpSaleOrderService {
 
     @Override
     @Transactional(rollbackFor={Exception.class})
-    public ErpSaleOutboundBatchEntity createOutboundBatch(Long saleOrderId, Long userId) {
+    public ErpSaleOutboundBatchEntity createOutboundBatch(ErpSaleOutboundBatchEntity request, Long userId) {
+        Long saleOrderId = request == null ? null : request.getSaleOrderId();
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(saleOrderId);
         if (order == null) {
             throw new RuntimeException("销售单不存在");
@@ -506,11 +515,40 @@ implements ErpSaleOrderService {
         if (openBatch != null) {
             throw new RuntimeException("存在未完成的出库批次，请先确认完成或删除后再新增");
         }
+        if (request.getDriverId() == null) {
+            throw new RuntimeException("请选择司机");
+        }
+        ErpDriverEntity driver = (ErpDriverEntity)this.erpDriverDao.selectById(request.getDriverId());
+        if (driver == null || this.defaultFlag(driver.getStatus()) != 1) {
+            throw new RuntimeException("所选司机不存在或已停用");
+        }
+        String ownershipName = StringUtils.trimToNull(request.getOwnershipName());
+        if (StringUtils.isBlank(ownershipName)) {
+            throw new RuntimeException("请选择货权");
+        }
+        List<ErpSaleOutboundPlanItemEntity> planItems = request.getPlanItemList();
+        if (planItems == null || planItems.isEmpty()) {
+            throw new RuntimeException("请至少选择一条本批次计划出库货物");
+        }
+        List<ErpSaleOrderItemEntity> saleItems = this.erpSaleOrderItemDao.selectList((Wrapper)new QueryWrapper<ErpSaleOrderItemEntity>()
+                .eq("sale_order_id", saleOrderId)
+                .orderByAsc("line_no", "id"));
+        this.enrichSaleItemOwnership(saleItems);
+        Map<Long, ErpSaleOrderItemEntity> saleItemMap = new HashMap<Long, ErpSaleOrderItemEntity>();
+        for (ErpSaleOrderItemEntity saleItem : saleItems) {
+            saleItemMap.put(saleItem.getId(), saleItem);
+        }
+        Map<Long, Integer> usedBoxesMap = this.loadConfirmedPlanBoxesBySaleItem(saleOrderId);
         Date now = new Date();
         ErpSaleOutboundBatchEntity batch = new ErpSaleOutboundBatchEntity();
         batch.setSaleOrderId(saleOrderId);
         batch.setBatchNo(this.nextOutboundBatchNo(saleOrderId));
         batch.setStatus(OUTBOUND_BATCH_PENDING_RECEIPT);
+        batch.setDriverId(driver.getId());
+        batch.setDriverName(driver.getDriverName());
+        batch.setPlateNo(driver.getPlateNo());
+        batch.setDriverMobile(driver.getMobile());
+        batch.setOwnershipName(ownershipName);
         batch.setReceiptCount(0);
         batch.setShippedTotalBoxes(0);
         batch.setShippedTotalWeight(BigDecimal.ZERO);
@@ -518,6 +556,47 @@ implements ErpSaleOrderService {
         batch.setCreateTime(now);
         batch.setUpdateTime(now);
         this.erpSaleOutboundBatchDao.insert(batch);
+        int lineNo = 1;
+        for (ErpSaleOutboundPlanItemEntity input : planItems) {
+            ErpSaleOrderItemEntity saleItem = input == null ? null : saleItemMap.get(input.getSaleOrderItemId());
+            if (saleItem == null) {
+                throw new RuntimeException("第" + lineNo + "行计划货物不属于当前销售单");
+            }
+            String itemOwnership = this.firstNonBlank(saleItem.getOwnershipName(), "未确认");
+            if (!ownershipName.equals(itemOwnership)) {
+                throw new RuntimeException("第" + lineNo + "行计划货物不属于所选货权");
+            }
+            int plannedBoxes = this.defaultInt(input.getPlannedBoxes());
+            BigDecimal plannedWeight = this.defaultDecimal(input.getPlannedWeight()).setScale(3, RoundingMode.HALF_UP);
+            if (plannedBoxes <= 0) {
+                throw new RuntimeException("第" + lineNo + "行计划箱数必须大于0");
+            }
+            if (plannedWeight.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new RuntimeException("第" + lineNo + "行计划重量必须大于0");
+            }
+            int remainingBoxes = this.defaultInt(saleItem.getBoxes()) - this.defaultInt(usedBoxesMap.get(saleItem.getId()));
+            if (plannedBoxes > remainingBoxes) {
+                throw new RuntimeException("第" + lineNo + "行计划箱数超过销售单剩余可出箱数" + remainingBoxes);
+            }
+            ErpSaleOutboundPlanItemEntity plan = new ErpSaleOutboundPlanItemEntity();
+            plan.setBatchId(batch.getId());
+            plan.setSaleOrderId(saleOrderId);
+            plan.setSaleOrderItemId(saleItem.getId());
+            plan.setLineNo(lineNo++);
+            plan.setOwnershipName(ownershipName);
+            plan.setProductId(saleItem.getProductId());
+            plan.setProductCode(saleItem.getProductCode());
+            plan.setProductName(saleItem.getProductName());
+            plan.setProductNameEn(saleItem.getProductNameEn());
+            plan.setContainerNo(saleItem.getSourceContainerNo());
+            plan.setFactoryNo(saleItem.getContractFactoryNo());
+            plan.setPlannedBoxes(plannedBoxes);
+            plan.setPlannedWeight(plannedWeight);
+            plan.setSalePriceKg(this.defaultDecimal(saleItem.getSalePriceKg()).setScale(2, RoundingMode.HALF_UP));
+            plan.setCreateTime(now);
+            plan.setUpdateTime(now);
+            this.erpSaleOutboundPlanItemDao.insert(plan);
+        }
         return this.loadOutboundBatch(batch.getId());
     }
 
@@ -1715,11 +1794,14 @@ implements ErpSaleOrderService {
         }
         Date now = new Date();
         ErpSaleOutboundReceiptEntity existing = this.selectOutboundReceiptForSave(receipt);
-        receipt.setSaleTotalBoxes(this.calcSaleTotalBoxes(receipt.getSaleOrderId()));
+        receipt.setSaleTotalBoxes(receipt.getBatchId() == null
+                ? this.calcSaleTotalBoxes(receipt.getSaleOrderId())
+                : this.calcOutboundBatchPlannedBoxes(receipt.getBatchId()));
         receipt.setShippedTotalBoxes(this.calcOutboundShippedBoxes(receipt.getItemList()));
         boolean matched = this.defaultInt(receipt.getSaleTotalBoxes()) == this.defaultInt(receipt.getShippedTotalBoxes());
         receipt.setMatched(matched ? 1 : 0);
-        receipt.setMatchMessage(matched ? "销售单箱数与出库回单发货数一致" : "销售单箱数" + this.defaultInt(receipt.getSaleTotalBoxes()) + "箱，出库回单发货数" + this.defaultInt(receipt.getShippedTotalBoxes()) + "箱，请核对");
+        String expectedLabel = receipt.getBatchId() == null ? "销售单箱数" : "批次计划箱数";
+        receipt.setMatchMessage(matched ? expectedLabel + "与出库回单发货数一致" : expectedLabel + this.defaultInt(receipt.getSaleTotalBoxes()) + "箱，出库回单发货数" + this.defaultInt(receipt.getShippedTotalBoxes()) + "箱，请核对");
         receipt.setUpdateTime(now);
         if (existing == null) {
             receipt.setCreateTime(now);
@@ -1741,6 +1823,7 @@ implements ErpSaleOrderService {
             item.setCreateTime(now);
             item.setUpdateTime(now);
             this.enrichOutboundReceiptItemProduct(item, item.getProductName());
+            this.assignOutboundPlanItem(item, receipt.getBatchId());
             this.erpSaleOutboundReceiptItemDao.insert(item);
         }
         return receipt.getBatchId() == null ? this.loadOutboundReceipt(receipt.getSaleOrderId()) : this.loadOutboundReceiptByBatch(receipt.getBatchId());
@@ -1757,7 +1840,9 @@ implements ErpSaleOrderService {
         Date now = new Date();
         ErpSaleOutboundReceiptEntity existing = this.selectOutboundReceiptForSave(receipt);
         if (existing == null) {
-            receipt.setSaleTotalBoxes(this.calcSaleTotalBoxes(receipt.getSaleOrderId()));
+            receipt.setSaleTotalBoxes(receipt.getBatchId() == null
+                    ? this.calcSaleTotalBoxes(receipt.getSaleOrderId())
+                    : this.calcOutboundBatchPlannedBoxes(receipt.getBatchId()));
             receipt.setShippedTotalBoxes(0);
             receipt.setMatched(0);
             receipt.setMatchMessage("出库回单待核对");
@@ -1787,6 +1872,7 @@ implements ErpSaleOrderService {
                 item.setUpdateTime(now);
                 this.fillOutboundReceiptItemHeaderFallback(item, existing);
                 this.enrichOutboundReceiptItemProduct(item, item.getProductName());
+                this.assignOutboundPlanItem(item, receipt.getBatchId());
                 this.erpSaleOutboundReceiptItemDao.insert(item);
             }
         }
@@ -1803,13 +1889,16 @@ implements ErpSaleOrderService {
             wrapper.eq("batch_id", receipt.getBatchId());
         }
         List<ErpSaleOutboundReceiptItemEntity> items = this.erpSaleOutboundReceiptItemDao.selectList((Wrapper)wrapper);
-        int saleTotalBoxes = this.calcSaleTotalBoxes(receipt.getSaleOrderId());
+        int saleTotalBoxes = receipt.getBatchId() == null
+                ? this.calcSaleTotalBoxes(receipt.getSaleOrderId())
+                : this.calcOutboundBatchPlannedBoxes(receipt.getBatchId());
         int shippedTotalBoxes = this.calcOutboundShippedBoxes(items);
         boolean matched = saleTotalBoxes == shippedTotalBoxes;
         receipt.setSaleTotalBoxes(saleTotalBoxes);
         receipt.setShippedTotalBoxes(shippedTotalBoxes);
         receipt.setMatched(matched ? 1 : 0);
-        receipt.setMatchMessage(matched ? "销售单箱数与出库回单发货数一致" : "销售单箱数" + saleTotalBoxes + "箱，出库回单发货数" + shippedTotalBoxes + "箱，请核对");
+        String expectedLabel = receipt.getBatchId() == null ? "销售单箱数" : "批次计划箱数";
+        receipt.setMatchMessage(matched ? expectedLabel + "与出库回单发货数一致" : expectedLabel + saleTotalBoxes + "箱，出库回单发货数" + shippedTotalBoxes + "箱，请核对");
         receipt.setUpdateTime(new Date());
         this.erpSaleOutboundReceiptDao.updateById(receipt);
     }
@@ -1851,7 +1940,33 @@ implements ErpSaleOrderService {
         if (openBatch != null) {
             return openBatch;
         }
-        return this.createOutboundBatch(saleOrderId, userId);
+        throw new RuntimeException("请先新增并保存出库批次计划");
+    }
+
+    private Map<Long, Integer> loadConfirmedPlanBoxesBySaleItem(Long saleOrderId) {
+        Map<Long, Integer> result = new HashMap<Long, Integer>();
+        List<ErpSaleOutboundBatchEntity> batches = this.erpSaleOutboundBatchDao.selectList((Wrapper)new QueryWrapper<ErpSaleOutboundBatchEntity>()
+                .eq("sale_order_id", saleOrderId)
+                .eq("status", OUTBOUND_BATCH_CONFIRMED));
+        if (batches == null || batches.isEmpty()) {
+            return result;
+        }
+        List<Long> batchIds = new ArrayList<Long>();
+        for (ErpSaleOutboundBatchEntity batch : batches) {
+            if (batch != null && batch.getId() != null) {
+                batchIds.add(batch.getId());
+            }
+        }
+        if (batchIds.isEmpty()) {
+            return result;
+        }
+        List<ErpSaleOutboundPlanItemEntity> items = this.erpSaleOutboundPlanItemDao.selectList((Wrapper)new QueryWrapper<ErpSaleOutboundPlanItemEntity>()
+                .in("batch_id", batchIds));
+        for (ErpSaleOutboundPlanItemEntity item : items) {
+            if (item == null || item.getSaleOrderItemId() == null) continue;
+            result.put(item.getSaleOrderItemId(), this.defaultInt(result.get(item.getSaleOrderItemId())) + this.defaultInt(item.getPlannedBoxes()));
+        }
+        return result;
     }
 
     private ErpSaleOutboundBatchEntity findOpenOutboundBatch(Long saleOrderId) {
@@ -2217,6 +2332,7 @@ implements ErpSaleOrderService {
             }
         }
         this.erpExpenseService.deleteBySource(ErpExpenseService.TYPE_OUTBOUND_STORAGE, ErpExpenseService.SOURCE_OUTBOUND_BATCH, batchId);
+        this.erpSaleOutboundPlanItemDao.delete((Wrapper)new QueryWrapper<ErpSaleOutboundPlanItemEntity>().eq("batch_id", batchId));
         this.erpSaleOutboundBatchDao.deleteById(batchId);
     }
 
@@ -2225,6 +2341,7 @@ implements ErpSaleOrderService {
             return;
         }
         batch.setReceipt(this.loadOutboundReceiptByBatch(batch.getId()));
+        batch.setPlanItemList(this.loadOutboundPlanItems(batch.getId(), batch.getReceipt()));
         batch.setScan(this.loadOutboundScanByBatch(batch.getId()));
         if (batch.getBankSlipFileId() != null) {
             batch.setBankSlipFile((ErpSaleOrderFileEntity)this.erpSaleOrderFileDao.selectById(batch.getBankSlipFileId()));
@@ -2237,6 +2354,35 @@ implements ErpSaleOrderService {
         List<ErpSaleOrderFileEntity> receiptFiles = this.erpSaleOrderFileDao.selectList((Wrapper)fileWrapper);
         batch.setReceiptFileList(receiptFiles == null ? new ArrayList<ErpSaleOrderFileEntity>() : receiptFiles);
         batch.setExpenseList(this.erpExpenseService.listBySource(ErpExpenseService.SOURCE_OUTBOUND_BATCH, batch.getId()));
+    }
+
+    private List<ErpSaleOutboundPlanItemEntity> loadOutboundPlanItems(Long batchId, ErpSaleOutboundReceiptEntity receipt) {
+        List<ErpSaleOutboundPlanItemEntity> plans = this.erpSaleOutboundPlanItemDao.selectList((Wrapper)new QueryWrapper<ErpSaleOutboundPlanItemEntity>()
+                .eq("batch_id", batchId)
+                .orderByAsc("line_no", "id"));
+        if (plans == null) {
+            plans = new ArrayList<ErpSaleOutboundPlanItemEntity>();
+        }
+        Map<Long, ErpSaleOutboundPlanItemEntity> planMap = new HashMap<Long, ErpSaleOutboundPlanItemEntity>();
+        for (ErpSaleOutboundPlanItemEntity plan : plans) {
+            plan.setActualBoxes(0);
+            plan.setActualWeight(BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP));
+            planMap.put(plan.getId(), plan);
+        }
+        if (receipt != null && receipt.getItemList() != null) {
+            for (ErpSaleOutboundReceiptItemEntity actual : receipt.getItemList()) {
+                ErpSaleOutboundPlanItemEntity plan = actual == null ? null : planMap.get(actual.getPlanItemId());
+                if (plan == null) continue;
+                plan.setActualBoxes(this.defaultInt(plan.getActualBoxes()) + this.defaultInt(actual.getShippedQty()));
+                plan.setActualWeight(this.defaultDecimal(plan.getActualWeight()).add(this.defaultDecimal(actual.getTotalWeight())).setScale(3, RoundingMode.HALF_UP));
+            }
+        }
+        for (ErpSaleOutboundPlanItemEntity plan : plans) {
+            plan.setDiffBoxes(this.defaultInt(plan.getPlannedBoxes()) - this.defaultInt(plan.getActualBoxes()));
+            plan.setDiffWeight(this.defaultDecimal(plan.getPlannedWeight()).subtract(this.defaultDecimal(plan.getActualWeight())).setScale(3, RoundingMode.HALF_UP));
+            plan.setAdjustmentAmount(this.defaultDecimal(plan.getDiffWeight()).multiply(this.defaultDecimal(plan.getSalePriceKg())).setScale(2, RoundingMode.HALF_UP));
+        }
+        return plans;
     }
 
     private ErpSaleOutboundScanEntity loadOutboundScanByBatch(Long batchId) {
@@ -2424,6 +2570,15 @@ implements ErpSaleOrderService {
             return;
         }
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(receipt.getSaleOrderId());
+        if (receipt.getBatchId() != null) {
+            for (ErpSaleOutboundReceiptItemEntity item : receipt.getItemList()) {
+                if (item == null) continue;
+                this.fillOutboundReceiptItemHeaderFallback(item, receipt);
+                ErpSaleOutboundPlanItemEntity plan = this.assignOutboundPlanItem(item, receipt.getBatchId());
+                this.fillOutboundReceiptAdjustment(item, order, plan);
+            }
+            return;
+        }
         QueryWrapper<ErpSaleOrderItemEntity> saleItemWrapper = new QueryWrapper<ErpSaleOrderItemEntity>();
         saleItemWrapper.eq("sale_order_id", receipt.getSaleOrderId()).orderByAsc("line_no", "id");
         List<ErpSaleOrderItemEntity> saleItems = this.erpSaleOrderItemDao.selectList((Wrapper)saleItemWrapper);
@@ -2447,6 +2602,66 @@ implements ErpSaleOrderService {
             ErpSaleOrderItemEntity saleItem = this.pollMatchedSaleItem(byProductContainer, byProduct, item);
             this.fillOutboundReceiptAdjustment(item, order, saleItem);
         }
+    }
+
+    private int calcOutboundBatchPlannedBoxes(Long batchId) {
+        if (batchId == null) {
+            return 0;
+        }
+        List<ErpSaleOutboundPlanItemEntity> plans = this.erpSaleOutboundPlanItemDao.selectList((Wrapper)new QueryWrapper<ErpSaleOutboundPlanItemEntity>()
+                .eq("batch_id", batchId));
+        int total = 0;
+        for (ErpSaleOutboundPlanItemEntity plan : plans) {
+            total += plan == null ? 0 : this.defaultInt(plan.getPlannedBoxes());
+        }
+        return total;
+    }
+
+    private ErpSaleOutboundPlanItemEntity assignOutboundPlanItem(ErpSaleOutboundReceiptItemEntity item, Long batchId) {
+        if (item == null || batchId == null) {
+            return null;
+        }
+        if (item.getPlanItemId() != null) {
+            ErpSaleOutboundPlanItemEntity saved = (ErpSaleOutboundPlanItemEntity)this.erpSaleOutboundPlanItemDao.selectById(item.getPlanItemId());
+            if (saved != null && batchId.equals(saved.getBatchId())) {
+                item.setPlanMatchStatus("已匹配");
+                return saved;
+            }
+        }
+        if (item.getProductId() == null) {
+            item.setPlanItemId(null);
+            item.setPlanMatchStatus("计划外出库");
+            return null;
+        }
+        QueryWrapper<ErpSaleOutboundPlanItemEntity> wrapper = new QueryWrapper<ErpSaleOutboundPlanItemEntity>();
+        wrapper.eq("batch_id", batchId).eq("product_id", item.getProductId()).orderByAsc("line_no", "id");
+        List<ErpSaleOutboundPlanItemEntity> plans = this.erpSaleOutboundPlanItemDao.selectList((Wrapper)wrapper);
+        if (plans == null || plans.isEmpty()) {
+            item.setPlanItemId(null);
+            item.setPlanMatchStatus("计划外出库");
+            return null;
+        }
+        String container = this.normalizeContainerNo(item.getContainerNo());
+        String factory = this.normalizeMatchText(item.getFactoryNo());
+        ErpSaleOutboundPlanItemEntity matched = null;
+        for (ErpSaleOutboundPlanItemEntity plan : plans) {
+            boolean containerMatched = StringUtils.isBlank(container) || container.equals(this.normalizeContainerNo(plan.getContainerNo()));
+            boolean factoryMatched = StringUtils.isBlank(factory) || factory.equals(this.normalizeMatchText(plan.getFactoryNo()));
+            if (containerMatched && factoryMatched) {
+                matched = plan;
+                break;
+            }
+        }
+        if (matched == null && plans.size() == 1) {
+            matched = plans.get(0);
+        }
+        item.setPlanItemId(matched == null ? null : matched.getId());
+        item.setPlanMatchStatus(matched == null ? "计划外出库" : "已匹配");
+        return matched;
+    }
+
+    private String normalizeMatchText(String value) {
+        return StringUtils.trimToEmpty(value).replaceAll("\\s+", "").toUpperCase();
     }
 
     private void fillOutboundReceiptItemHeaderFallback(ErpSaleOutboundReceiptItemEntity item, ErpSaleOutboundReceiptEntity receipt) {
@@ -2517,6 +2732,32 @@ implements ErpSaleOrderService {
         item.setDiffBoxes(diffBoxes);
         item.setDiffWeight(diffWeight);
         item.setAdjustmentAmount(amount);
+    }
+
+    private void fillOutboundReceiptAdjustment(ErpSaleOutboundReceiptItemEntity item, ErpSaleOrderEntity order, ErpSaleOutboundPlanItemEntity plan) {
+        if (item == null) {
+            return;
+        }
+        item.setContractNo(order == null ? null : this.firstNonBlank(order.getContractNo(), order.getOrderNo()));
+        if (plan == null) {
+            item.setExpectedBoxes(0);
+            item.setExpectedWeight(BigDecimal.ZERO);
+            item.setSalePriceKg(BigDecimal.ZERO);
+        } else {
+            item.setExpectedFactoryNo(plan.getFactoryNo());
+            item.setExpectedContainerNo(plan.getContainerNo());
+            item.setExpectedBoxes(this.defaultInt(plan.getPlannedBoxes()));
+            item.setExpectedWeight(this.defaultDecimal(plan.getPlannedWeight()).setScale(3, RoundingMode.HALF_UP));
+            item.setSalePriceKg(this.defaultDecimal(plan.getSalePriceKg()).setScale(2, RoundingMode.HALF_UP));
+            if (StringUtils.isBlank(item.getFactoryNo())) {
+                item.setFactoryNo(plan.getFactoryNo());
+            }
+        }
+        int diffBoxes = this.defaultInt(item.getExpectedBoxes()) - this.defaultInt(item.getShippedQty());
+        BigDecimal diffWeight = this.defaultDecimal(item.getExpectedWeight()).subtract(this.defaultDecimal(item.getTotalWeight())).setScale(3, RoundingMode.HALF_UP);
+        item.setDiffBoxes(diffBoxes);
+        item.setDiffWeight(diffWeight);
+        item.setAdjustmentAmount(diffWeight.multiply(this.defaultDecimal(item.getSalePriceKg())).setScale(2, RoundingMode.HALF_UP));
     }
 
     private List<ErpSaleOutboundReceiptItemEntity> buildOutboundSummary(Long saleOrderId) {

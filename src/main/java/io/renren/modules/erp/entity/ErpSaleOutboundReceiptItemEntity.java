@@ -18,6 +18,7 @@ public class ErpSaleOutboundReceiptItemEntity implements Serializable {
   private Long receiptId;
   private Long saleOrderId;
   private Long batchId;
+  private Long planItemId;
   private String wmsOrderNo;
   private String outboundOrderNo;
   private String customerCode;
@@ -57,4 +58,6 @@ public class ErpSaleOutboundReceiptItemEntity implements Serializable {
   private BigDecimal diffWeight;
   @TableField(exist = false)
   private BigDecimal adjustmentAmount;
+  @TableField(exist = false)
+  private String planMatchStatus;
 }

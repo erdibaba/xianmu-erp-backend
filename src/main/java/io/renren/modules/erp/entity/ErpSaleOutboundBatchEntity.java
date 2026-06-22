@@ -20,6 +20,11 @@ public class ErpSaleOutboundBatchEntity implements Serializable {
   private Long saleOrderId;
   private String batchNo;
   private Integer status;
+  private Long driverId;
+  private String driverName;
+  private String plateNo;
+  private String driverMobile;
+  private String ownershipName;
   private Long bankSlipFileId;
   private Integer receiptCount;
   private Integer shippedTotalBoxes;
@@ -61,4 +66,7 @@ public class ErpSaleOutboundBatchEntity implements Serializable {
 
   @TableField(exist = false)
   private ErpSaleOutboundScanEntity scan;
+
+  @TableField(exist = false)
+  private List<ErpSaleOutboundPlanItemEntity> planItemList = new ArrayList<ErpSaleOutboundPlanItemEntity>();
 }

@@ -46,7 +46,7 @@ public interface ErpSaleOrderService {
 
   List<ErpSaleOutboundBatchEntity> queryOutboundBatches(Long saleOrderId);
 
-  ErpSaleOutboundBatchEntity createOutboundBatch(Long saleOrderId, Long userId);
+  ErpSaleOutboundBatchEntity createOutboundBatch(ErpSaleOutboundBatchEntity batch, Long userId);
 
   ErpSaleOutboundBatchEntity uploadOutboundBatchBankSlip(Long saleOrderId, Long batchId, MultipartFile[] files, Long userId) throws Exception;
 
