@@ -17,6 +17,11 @@ public class ErpFunderLoanRepaymentEntity implements Serializable {
   private Long id;
   private String repaymentNo;
   private Long loanId;
+  private Long settlementId;
+  private Long settlementItemId;
+  private Long outboundBatchId;
+  private String outboundBatchNo;
+  private String repaymentSource;
   private Integer lineNo;
   private BigDecimal repaymentPrincipal;
   private BigDecimal annualInterestRate;

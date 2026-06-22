@@ -4,20 +4,40 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.Query;
+import io.renren.modules.erp.dao.ErpFunderBatchSettlementDao;
+import io.renren.modules.erp.dao.ErpFunderBatchSettlementItemDao;
 import io.renren.modules.erp.dao.ErpFunderLoanDao;
 import io.renren.modules.erp.dao.ErpFunderLoanRepaymentDao;
 import io.renren.modules.erp.dao.ErpFunderPaymentAllocationDao;
 import io.renren.modules.erp.dao.ErpFunderPaymentDao;
+import io.renren.modules.erp.dao.ErpInboundOrderDao;
 import io.renren.modules.erp.dao.ErpPartnerDao;
 import io.renren.modules.erp.dao.ErpPresaleConfirmDao;
+import io.renren.modules.erp.dao.ErpPresaleConfirmItemDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
+import io.renren.modules.erp.dao.ErpSaleOrderDao;
+import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundBatchDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundPlanItemDao;
+import io.renren.modules.erp.dao.ErpSaleOutboundReceiptItemDao;
+import io.renren.modules.erp.dao.ErpWarehouseFeeRateDao;
+import io.renren.modules.erp.entity.ErpFunderBatchSettlementEntity;
+import io.renren.modules.erp.entity.ErpFunderBatchSettlementItemEntity;
 import io.renren.modules.erp.entity.ErpFunderLoanEntity;
 import io.renren.modules.erp.entity.ErpFunderLoanRepaymentEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentAllocationEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
+import io.renren.modules.erp.entity.ErpInboundOrderEntity;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
 import io.renren.modules.erp.entity.ErpPresaleConfirmEntity;
+import io.renren.modules.erp.entity.ErpPresaleConfirmItemEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
+import io.renren.modules.erp.entity.ErpSaleOrderEntity;
+import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundPlanItemEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
+import io.renren.modules.erp.entity.ErpWarehouseFeeRateEntity;
 import io.renren.modules.erp.service.ErpFunderFinanceService;
 import io.renren.modules.erp.service.ErpOcrService;
 import io.renren.modules.erp.vo.ErpRecognizeResultVo;
@@ -53,6 +73,16 @@ import org.springframework.web.multipart.MultipartFile;
 public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
   private static final BigDecimal DAYS_PER_YEAR = new BigDecimal("365");
+  private static final BigDecimal DAYS_PER_YEAR_360 = new BigDecimal("360");
+  private static final BigDecimal RATE_RUIHEXIANG = new BigDecimal("0.06");
+  private static final BigDecimal RATE_CHAOYUE = new BigDecimal("0.06984");
+  private static final BigDecimal RATE_WANXIANG = new BigDecimal("0.055");
+  private static final int OUTBOUND_BATCH_CONFIRMED = 3;
+  private static final String RULE_RUIHEXIANG = "RUIHEXIANG";
+  private static final String RULE_CHAOYUE = "CHAOYUE";
+  private static final String RULE_WANXIANG = "WANXIANG";
+  private static final String REPAYMENT_SOURCE_MANUAL = "MANUAL";
+  private static final String REPAYMENT_SOURCE_BATCH = "BATCH";
   private static final int PAYMENT_TYPE_FUNDER = 1;
   private static final int PAYMENT_TYPE_XIANMU = 2;
   private static final Pattern LABEL_AMOUNT_PATTERN = Pattern.compile(
@@ -79,11 +109,31 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   @Autowired
   private ErpFunderLoanRepaymentDao repaymentDao;
   @Autowired
+  private ErpFunderBatchSettlementDao batchSettlementDao;
+  @Autowired
+  private ErpFunderBatchSettlementItemDao batchSettlementItemDao;
+  @Autowired
   private ErpPartnerDao partnerDao;
   @Autowired
   private ErpPresaleOrderDao presaleOrderDao;
   @Autowired
   private ErpPresaleConfirmDao presaleConfirmDao;
+  @Autowired
+  private ErpPresaleConfirmItemDao presaleConfirmItemDao;
+  @Autowired
+  private ErpSaleOrderDao saleOrderDao;
+  @Autowired
+  private ErpSaleOrderItemDao saleOrderItemDao;
+  @Autowired
+  private ErpSaleOutboundBatchDao outboundBatchDao;
+  @Autowired
+  private ErpSaleOutboundPlanItemDao outboundPlanItemDao;
+  @Autowired
+  private ErpSaleOutboundReceiptItemDao outboundReceiptItemDao;
+  @Autowired
+  private ErpInboundOrderDao inboundOrderDao;
+  @Autowired
+  private ErpWarehouseFeeRateDao warehouseFeeRateDao;
   @Autowired
   private ErpOcrService ocrService;
 
@@ -479,6 +529,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         .stream().findFirst().map(ErpFunderLoanRepaymentEntity::getLineNo).orElse(0);
     repayment.setRepaymentNo(number("FR"));
     repayment.setLineNo(maxLine + 1);
+    repayment.setRepaymentSource(REPAYMENT_SOURCE_MANUAL);
     repayment.setRecognizedAmount(money(repayment.getRecognizedAmount()));
     repayment.setModifiedAmount(money(repayment.getModifiedAmount()));
     repayment.setHandlingFeeAmount(money(repayment.getHandlingFeeAmount()));
@@ -502,6 +553,522 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     loan.setStatus(remainingPrincipal.compareTo(BigDecimal.ZERO) == 0 ? 1 : 0);
     loan.setUpdateTime(now);
     loanDao.updateById(loan);
+  }
+
+  @Override
+  public List<ErpSaleOutboundBatchEntity> querySettleableOutboundBatches(String keyword) {
+    QueryWrapper<ErpSaleOutboundBatchEntity> wrapper = new QueryWrapper<ErpSaleOutboundBatchEntity>()
+        .eq("status", OUTBOUND_BATCH_CONFIRMED)
+        .notInSql("id", "select outbound_batch_id from erp_funder_batch_settlement")
+        .orderByDesc("confirm_time", "id")
+        .last("limit 80");
+    if (StringUtils.isNotBlank(keyword)) {
+      wrapper.and(q -> q.like("batch_no", keyword).or().like("ownership_name", keyword));
+    }
+    List<ErpSaleOutboundBatchEntity> batches = outboundBatchDao.selectList(wrapper);
+    List<ErpSaleOutboundBatchEntity> result = new ArrayList<ErpSaleOutboundBatchEntity>();
+    for (ErpSaleOutboundBatchEntity batch : batches) {
+      ErpSaleOrderEntity order = batch == null ? null : saleOrderDao.selectById(batch.getSaleOrderId());
+      if (order != null) {
+        batch.setSaleOrderNo(order.getOrderNo());
+      }
+      String haystack = StringUtils.defaultString(batch == null ? null : batch.getBatchNo()) + " "
+          + StringUtils.defaultString(batch == null ? null : batch.getOwnershipName()) + " "
+          + StringUtils.defaultString(order == null ? null : order.getOrderNo()) + " "
+          + StringUtils.defaultString(order == null ? null : order.getContractNo());
+      if (StringUtils.isBlank(keyword) || StringUtils.containsIgnoreCase(haystack, keyword)) {
+        result.add(batch);
+      }
+      if (result.size() >= 15) {
+        break;
+      }
+    }
+    return result;
+  }
+
+  @Override
+  public ErpFunderBatchSettlementEntity calculateBatchSettlement(ErpFunderBatchSettlementEntity request) {
+    if (request == null || request.getOutboundBatchId() == null) {
+      throw new RuntimeException("请选择已确认的出库批次");
+    }
+    Date settlementDate = request.getSettlementDate() == null ? new Date() : request.getSettlementDate();
+    ErpFunderBatchSettlementEntity settlement = buildBatchSettlement(request.getOutboundBatchId(), settlementDate);
+    if (RULE_CHAOYUE.equals(settlement.getRuleType())
+        && money(request.getConfirmedPrincipalAmount()).compareTo(BigDecimal.ZERO) > 0) {
+      redistributeConfirmedPrincipal(settlement, money(request.getConfirmedPrincipalAmount()));
+    }
+    applySettlementOverrideAmounts(settlement, request);
+    recalcSettlementTotals(settlement);
+    return settlement;
+  }
+
+  @Override
+  @Transactional(rollbackFor = Exception.class)
+  public void confirmBatchSettlement(ErpFunderBatchSettlementEntity request, Long userId) {
+    if (request == null || request.getOutboundBatchId() == null) {
+      throw new RuntimeException("请选择已确认的出库批次");
+    }
+    if (batchSettlementDao.selectCount(new QueryWrapper<ErpFunderBatchSettlementEntity>()
+        .eq("outbound_batch_id", request.getOutboundBatchId())) > 0) {
+      throw new RuntimeException("该出库批次已生成资方结算，请勿重复确认");
+    }
+    if (request.getConfirmedPaymentAmount() == null
+        || money(request.getConfirmedPaymentAmount()).compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("确认应付资方金额必须大于0");
+    }
+    if (StringUtils.isBlank(request.getFilePath())) {
+      throw new RuntimeException("请先上传资方还款凭证");
+    }
+    ErpFunderBatchSettlementEntity settlement = calculateBatchSettlement(request);
+    settlement.setConfirmedPaymentAmount(money(request.getConfirmedPaymentAmount()));
+    Date now = new Date();
+    settlement.setSettlementNo(number("FS"));
+    settlement.setStatus(1);
+    settlement.setRemark(StringUtils.trimToNull(request.getRemark()));
+    settlement.setRecognizedPaymentAmount(money(request.getRecognizedPaymentAmount()));
+    settlement.setFilePath(StringUtils.trimToNull(request.getFilePath()));
+    settlement.setFileName(StringUtils.trimToNull(request.getFileName()));
+    settlement.setRawText(request.getRawText());
+    settlement.setCreateUserId(userId);
+    settlement.setCreateTime(now);
+    settlement.setUpdateTime(now);
+    batchSettlementDao.insert(settlement);
+
+    BigDecimal confirmedPaymentLeft = money(settlement.getConfirmedPaymentAmount());
+    BigDecimal expectedTotal = money(settlement.getExpectedPaymentAmount());
+    int lineNo = 1;
+    for (ErpFunderBatchSettlementItemEntity item : settlement.getItemList()) {
+      item.setSettlementId(settlement.getId());
+      item.setLineNo(lineNo++);
+      item.setCreateTime(now);
+      item.setUpdateTime(now);
+      batchSettlementItemDao.insert(item);
+
+      ErpFunderLoanEntity loan = loanDao.selectOne(new QueryWrapper<ErpFunderLoanEntity>()
+          .eq("id", item.getLoanId())
+          .last("for update"));
+      if (loan == null) {
+        throw new RuntimeException("结算明细关联的贷款不存在");
+      }
+      BigDecimal principal = money(item.getConfirmedPrincipalAmount());
+      if (principal.compareTo(money(loan.getRemainingPrincipal())) > 0) {
+        throw new RuntimeException("确认还本金不能大于贷款剩余本金，合同号：" + item.getConfirmContractNo());
+      }
+      BigDecimal expected = money(item.getExpectedPaymentAmount());
+      BigDecimal modified = lineNo > settlement.getItemList().size()
+          ? confirmedPaymentLeft
+          : money(settlement.getConfirmedPaymentAmount()).multiply(expected)
+              .divide(expectedTotal.compareTo(BigDecimal.ZERO) <= 0 ? BigDecimal.ONE : expectedTotal, 8, RoundingMode.HALF_UP)
+              .setScale(2, RoundingMode.HALF_UP);
+      confirmedPaymentLeft = confirmedPaymentLeft.subtract(modified).setScale(2, RoundingMode.HALF_UP);
+
+      ErpFunderLoanRepaymentEntity repayment = new ErpFunderLoanRepaymentEntity();
+      repayment.setRepaymentNo(number("FR"));
+      repayment.setLoanId(loan.getId());
+      repayment.setSettlementId(settlement.getId());
+      repayment.setSettlementItemId(item.getId());
+      repayment.setOutboundBatchId(settlement.getOutboundBatchId());
+      repayment.setOutboundBatchNo(settlement.getBatchNo());
+      repayment.setRepaymentSource(REPAYMENT_SOURCE_BATCH);
+      repayment.setLineNo(nextRepaymentLineNo(loan.getId()));
+      repayment.setRepaymentPrincipal(principal);
+      repayment.setAnnualInterestRate(rate(loan.getAnnualInterestRate()));
+      repayment.setLoanDays(item.getLoanDays());
+      repayment.setInterestAmount(money(item.getInterestAmount()));
+      repayment.setHandlingFeeAmount(money(item.getHandlingFeeAmount())
+          .add(money(item.getStorageFeeAmount()))
+          .add(money(item.getCodeScanFeeAmount()))
+          .add(money(item.getStampTaxAmount()))
+          .add(money(item.getDepositAmount()))
+          .add(money(item.getTaxAdjustAmount()))
+          .add(money(item.getGrossWeightFeeAmount()))
+          .add(money(item.getOtherFeeAmount())));
+      repayment.setHandlingFeeReason("出库批次资方结算：" + settlement.getBatchNo());
+      repayment.setExpectedPaymentAmount(expected);
+      repayment.setRecognizedAmount(money(settlement.getRecognizedPaymentAmount()));
+      repayment.setModifiedAmount(modified);
+      repayment.setRepaymentDate(settlement.getSettlementDate());
+      repayment.setAmountMatched(settlement.getConfirmedPaymentAmount().compareTo(settlement.getExpectedPaymentAmount()) == 0 ? 1 : 0);
+      repayment.setFilePath(settlement.getFilePath());
+      repayment.setFileName(settlement.getFileName());
+      repayment.setRawText(settlement.getRawText());
+      repayment.setStatus(1);
+      repayment.setCreateUserId(userId);
+      repayment.setCreateTime(now);
+      repayment.setUpdateTime(now);
+      repaymentDao.insert(repayment);
+
+      BigDecimal repaidPrincipal = money(loan.getRepaidPrincipal()).add(principal);
+      BigDecimal remainingPrincipal = money(loan.getLoanAmount()).subtract(repaidPrincipal);
+      if (remainingPrincipal.compareTo(BigDecimal.ZERO) < 0) {
+        throw new RuntimeException("累计归还本金不能大于贷款本金，合同号：" + item.getConfirmContractNo());
+      }
+      loan.setRepaidPrincipal(money(repaidPrincipal));
+      loan.setRemainingPrincipal(money(remainingPrincipal));
+      loan.setInterestAmount(decimal2(decimal2(loan.getInterestAmount()).add(money(item.getInterestAmount()))));
+      loan.setStatus(remainingPrincipal.compareTo(BigDecimal.ZERO) == 0 ? 1 : 0);
+      loan.setUpdateTime(now);
+      loanDao.updateById(loan);
+    }
+  }
+
+  private ErpFunderBatchSettlementEntity buildBatchSettlement(Long outboundBatchId, Date settlementDate) {
+    ErpSaleOutboundBatchEntity batch = outboundBatchDao.selectById(outboundBatchId);
+    if (batch == null) {
+      throw new RuntimeException("出库批次不存在");
+    }
+    if (batch.getStatus() == null || batch.getStatus() != OUTBOUND_BATCH_CONFIRMED) {
+      throw new RuntimeException("只有已确认完成的出库批次才能生成资方结算");
+    }
+    ErpSaleOrderEntity saleOrder = saleOrderDao.selectById(batch.getSaleOrderId());
+    if (saleOrder == null) {
+      throw new RuntimeException("出库批次关联的销售单不存在");
+    }
+    List<ErpSaleOutboundPlanItemEntity> planItems = outboundPlanItemDao.selectList(
+        new QueryWrapper<ErpSaleOutboundPlanItemEntity>().eq("batch_id", outboundBatchId).orderByAsc("line_no", "id"));
+    if (planItems == null || planItems.isEmpty()) {
+      throw new RuntimeException("出库批次没有计划货物，不能生成资方结算");
+    }
+    List<ErpSaleOutboundReceiptItemEntity> actualItems = outboundReceiptItemDao.selectList(
+        new QueryWrapper<ErpSaleOutboundReceiptItemEntity>().eq("batch_id", outboundBatchId).orderByAsc("line_no", "id"));
+    if (actualItems == null || actualItems.isEmpty()) {
+      throw new RuntimeException("出库批次没有实际出库明细，不能生成资方结算");
+    }
+    Map<Long, ActualOutbound> actualMap = sumActualByPlan(actualItems);
+    ErpFunderBatchSettlementEntity settlement = new ErpFunderBatchSettlementEntity();
+    settlement.setOutboundBatchId(batch.getId());
+    settlement.setSaleOrderId(batch.getSaleOrderId());
+    settlement.setBatchNo(batch.getBatchNo());
+    settlement.setSaleOrderNo(saleOrder.getOrderNo());
+    settlement.setOwnershipName(batch.getOwnershipName());
+    settlement.setSettlementDate(settlementDate);
+    List<ErpFunderBatchSettlementItemEntity> items = new ArrayList<ErpFunderBatchSettlementItemEntity>();
+    Long funderId = null;
+    String funderName = null;
+    String ruleType = null;
+    int lineNo = 1;
+    for (ErpSaleOutboundPlanItemEntity plan : planItems) {
+      ActualOutbound actual = actualMap.get(plan.getId());
+      if (actual == null || actual.boxes <= 0 || actual.weight.compareTo(BigDecimal.ZERO) <= 0) {
+        continue;
+      }
+      ErpSaleOrderItemEntity saleItem = saleOrderItemDao.selectById(plan.getSaleOrderItemId());
+      if (saleItem == null) {
+        throw new RuntimeException("出库计划关联的销售单明细不存在：" + plan.getProductCode());
+      }
+      ErpInboundOrderEntity inbound = saleItem.getSourceInboundOrderId() == null ? null : inboundOrderDao.selectById(saleItem.getSourceInboundOrderId());
+      if (inbound == null || inbound.getConfirmId() == null) {
+        throw new RuntimeException("产品" + plan.getProductCode() + "未追溯到客户订单确认函，不能生成资方结算");
+      }
+      ErpFunderLoanEntity loan = loanDao.selectOne(new QueryWrapper<ErpFunderLoanEntity>()
+          .eq("confirm_id", inbound.getConfirmId())
+          .eq("status", 0)
+          .last("limit 1"));
+      if (loan == null) {
+        throw new RuntimeException("确认函合同未找到待还资方贷款：" + inbound.getContractNo());
+      }
+      if (funderId == null) {
+        funderId = loan.getFunderId();
+        funderName = loan.getFunderName();
+        ruleType = resolveFunderRuleType(loan.getFunderId(), loan.getFunderName());
+      } else if (!funderId.equals(loan.getFunderId())) {
+        throw new RuntimeException("一个出库批次只能结算同一个资方货权");
+      }
+      ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectById(inbound.getConfirmId());
+      ErpPresaleConfirmItemEntity confirmItem = findConfirmItem(inbound.getConfirmId(), plan.getProductId());
+      BigDecimal unitPrice = confirmItem == null ? BigDecimal.ZERO : decimal6(confirmItem.getUnitPriceInclTax());
+      BigDecimal costAmount = money(actual.weight.multiply(unitPrice));
+      BigDecimal confirmAmount = confirm == null ? BigDecimal.ZERO : money(confirm.getTotalAmount());
+      BigDecimal principal = confirmAmount.compareTo(BigDecimal.ZERO) <= 0
+          ? BigDecimal.ZERO
+          : money(costAmount.multiply(money(loan.getLoanAmount())).divide(confirmAmount, 8, RoundingMode.HALF_UP));
+      if (principal.compareTo(money(loan.getRemainingPrincipal())) > 0) {
+        principal = money(loan.getRemainingPrincipal());
+      }
+      ErpFunderBatchSettlementItemEntity item = new ErpFunderBatchSettlementItemEntity();
+      item.setOutboundBatchId(outboundBatchId);
+      item.setPlanItemId(plan.getId());
+      item.setSaleOrderItemId(plan.getSaleOrderItemId());
+      item.setLoanId(loan.getId());
+      item.setConfirmId(inbound.getConfirmId());
+      item.setConfirmContractNo(loan.getConfirmContractNo());
+      item.setLineNo(lineNo++);
+      item.setProductId(plan.getProductId());
+      item.setProductCode(plan.getProductCode());
+      item.setProductName(plan.getProductName());
+      item.setContainerNo(plan.getContainerNo());
+      item.setFactoryNo(plan.getFactoryNo());
+      item.setShippedBoxes(actual.boxes);
+      item.setShippedWeight(actual.weight);
+      item.setUnitPriceInclTax(unitPrice);
+      item.setCostAmount(costAmount);
+      item.setSystemPrincipalAmount(principal);
+      item.setConfirmedPrincipalAmount(principal);
+      item.setLoanDays(calcLoanDays(ruleType, loan.getLoanDate(), settlementDate));
+      applyRuleAmounts(item, ruleType, loan, confirm, saleItem, settlementDate);
+      items.add(item);
+    }
+    if (items.isEmpty()) {
+      throw new RuntimeException("出库批次没有可结算的实际出库明细");
+    }
+    settlement.setFunderId(funderId);
+    settlement.setFunderName(funderName);
+    settlement.setRuleType(ruleType);
+    settlement.setItemList(items);
+    recalcSettlementTotals(settlement);
+    settlement.setRecognizedPaymentAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+    settlement.setConfirmedPaymentAmount(settlement.getExpectedPaymentAmount());
+    return settlement;
+  }
+
+  private Map<Long, ActualOutbound> sumActualByPlan(List<ErpSaleOutboundReceiptItemEntity> actualItems) {
+    Map<Long, ActualOutbound> result = new HashMap<Long, ActualOutbound>();
+    for (ErpSaleOutboundReceiptItemEntity actual : actualItems) {
+      if (actual == null || actual.getPlanItemId() == null) {
+        continue;
+      }
+      ActualOutbound summary = result.get(actual.getPlanItemId());
+      if (summary == null) {
+        summary = new ActualOutbound();
+        result.put(actual.getPlanItemId(), summary);
+      }
+      summary.boxes += actual.getShippedQty() == null ? 0 : actual.getShippedQty();
+      summary.weight = summary.weight.add(decimal3(actual.getTotalWeight()));
+    }
+    return result;
+  }
+
+  private ErpPresaleConfirmItemEntity findConfirmItem(Long confirmId, Long productId) {
+    if (confirmId == null || productId == null) {
+      return null;
+    }
+    return presaleConfirmItemDao.selectOne(new QueryWrapper<ErpPresaleConfirmItemEntity>()
+        .eq("confirm_id", confirmId)
+        .eq("product_id", productId)
+        .last("limit 1"));
+  }
+
+  private void applyRuleAmounts(ErpFunderBatchSettlementItemEntity item, String ruleType,
+                                ErpFunderLoanEntity loan, ErpPresaleConfirmEntity confirm,
+                                ErpSaleOrderItemEntity saleItem, Date settlementDate) {
+    BigDecimal principal = money(item.getConfirmedPrincipalAmount());
+    BigDecimal interest = BigDecimal.ZERO;
+    if (RULE_RUIHEXIANG.equals(ruleType)) {
+      interest = principal.multiply(RATE_RUIHEXIANG)
+          .divide(DAYS_PER_YEAR, 8, RoundingMode.HALF_UP)
+          .multiply(new BigDecimal(item.getLoanDays()));
+    } else if (RULE_CHAOYUE.equals(ruleType)) {
+      interest = principal.multiply(RATE_CHAOYUE)
+          .divide(DAYS_PER_YEAR_360, 8, RoundingMode.HALF_UP)
+          .multiply(new BigDecimal(item.getLoanDays()));
+    } else if (RULE_WANXIANG.equals(ruleType)) {
+      interest = principal.multiply(RATE_WANXIANG)
+          .divide(DAYS_PER_YEAR_360, 8, RoundingMode.HALF_UP)
+          .multiply(new BigDecimal(item.getLoanDays()));
+      applyWanxiangFeeAmounts(item, confirm, saleItem, settlementDate);
+    } else {
+      interest = principal.multiply(rate(loan.getAnnualInterestRate()))
+          .divide(ONE_HUNDRED, 8, RoundingMode.HALF_UP)
+          .divide(DAYS_PER_YEAR, 8, RoundingMode.HALF_UP)
+          .multiply(new BigDecimal(item.getLoanDays()));
+    }
+    item.setInterestAmount(money(interest));
+    item.setExpectedPaymentAmount(calcItemExpectedPayment(item));
+  }
+
+  private void applyWanxiangFeeAmounts(ErpFunderBatchSettlementItemEntity item,
+                                       ErpPresaleConfirmEntity confirm,
+                                       ErpSaleOrderItemEntity saleItem,
+                                       Date settlementDate) {
+    String coldFreshType = confirm == null ? "" : StringUtils.defaultString(confirm.getColdFreshType());
+    boolean frozen = StringUtils.contains(coldFreshType, "冻");
+    ErpWarehouseFeeRateEntity rate = loadWarehouseRate(saleItem == null ? null : saleItem.getWarehouseId(), settlementDate);
+    BigDecimal weightTon = decimal3(item.getShippedWeight()).divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
+    BigDecimal storageRate = rate == null ? BigDecimal.ZERO
+        : money(frozen ? rate.getFrozenStorageFee() : rate.getChilledStorageFee());
+    BigDecimal handlingRate = rate == null ? BigDecimal.ZERO
+        : money(frozen ? rate.getFrozenColdFee() : rate.getChilledColdFee());
+    item.setStorageFeeAmount(money(storageRate.multiply(weightTon)));
+    item.setHandlingFeeAmount(money(handlingRate.multiply(weightTon)));
+    item.setCodeScanFeeAmount(calcCodeScanFee(saleItem == null ? null : saleItem.getWarehouseName(), item));
+    item.setStampTaxAmount(money(decimal3(item.getShippedWeight()).multiply(decimal6(item.getUnitPriceInclTax())).multiply(new BigDecimal("0.0006"))));
+    item.setDepositAmount(money(item.getCostAmount().multiply(new BigDecimal("0.25"))));
+    item.setTaxAdjustAmount(money(item.getTaxAdjustAmount()));
+    item.setGrossWeightFeeAmount(money(item.getGrossWeightFeeAmount()));
+    item.setOtherFeeAmount(money(item.getOtherFeeAmount()));
+  }
+
+  private BigDecimal calcCodeScanFee(String warehouseName, ErpFunderBatchSettlementItemEntity item) {
+    if (StringUtils.contains(StringUtils.defaultString(warehouseName), "上海")) {
+      return money(new BigDecimal("0.35").multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
+    }
+    BigDecimal weightTon = decimal3(item.getShippedWeight()).divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
+    return money(new BigDecimal("15").multiply(weightTon));
+  }
+
+  private ErpWarehouseFeeRateEntity loadWarehouseRate(Long warehouseId, Date businessDate) {
+    if (warehouseId == null) {
+      return null;
+    }
+    return warehouseFeeRateDao.selectOne(new QueryWrapper<ErpWarehouseFeeRateEntity>()
+        .eq("warehouse_id", warehouseId)
+        .eq("status", 1)
+        .le("effective_date", businessDate)
+        .orderByDesc("effective_date", "id")
+        .last("limit 1"));
+  }
+
+  private void redistributeConfirmedPrincipal(ErpFunderBatchSettlementEntity settlement, BigDecimal confirmedTotal) {
+    BigDecimal systemTotal = BigDecimal.ZERO;
+    for (ErpFunderBatchSettlementItemEntity item : settlement.getItemList()) {
+      systemTotal = systemTotal.add(money(item.getSystemPrincipalAmount()));
+    }
+    if (confirmedTotal.compareTo(systemTotal) > 0) {
+      throw new RuntimeException("资方认定回款本金不能大于系统理论还本金");
+    }
+    BigDecimal allocated = BigDecimal.ZERO;
+    List<ErpFunderBatchSettlementItemEntity> items = settlement.getItemList();
+    for (int i = 0; i < items.size(); i++) {
+      ErpFunderBatchSettlementItemEntity item = items.get(i);
+      BigDecimal value = i == items.size() - 1
+          ? confirmedTotal.subtract(allocated)
+          : confirmedTotal.multiply(money(item.getSystemPrincipalAmount()))
+              .divide(systemTotal.compareTo(BigDecimal.ZERO) <= 0 ? BigDecimal.ONE : systemTotal, 8, RoundingMode.HALF_UP)
+              .setScale(2, RoundingMode.HALF_UP);
+      allocated = allocated.add(value);
+      item.setConfirmedPrincipalAmount(money(value));
+      ErpFunderLoanEntity loan = loanDao.selectById(item.getLoanId());
+      ErpPresaleConfirmEntity confirm = item.getConfirmId() == null ? null : presaleConfirmDao.selectById(item.getConfirmId());
+      ErpSaleOrderItemEntity saleItem = item.getSaleOrderItemId() == null ? null : saleOrderItemDao.selectById(item.getSaleOrderItemId());
+      applyRuleAmounts(item, settlement.getRuleType(), loan, confirm, saleItem, settlement.getSettlementDate());
+    }
+  }
+
+  private void applySettlementOverrideAmounts(ErpFunderBatchSettlementEntity settlement, ErpFunderBatchSettlementEntity request) {
+    settlement.setTaxAdjustAmount(money(request.getTaxAdjustAmount()));
+    settlement.setGrossWeightFeeAmount(money(request.getGrossWeightFeeAmount()));
+    settlement.setOtherFeeAmount(money(request.getOtherFeeAmount()));
+    settlement.setRecognizedPaymentAmount(money(request.getRecognizedPaymentAmount()));
+    settlement.setFilePath(StringUtils.trimToNull(request.getFilePath()));
+    settlement.setFileName(StringUtils.trimToNull(request.getFileName()));
+    settlement.setRawText(request.getRawText());
+    if (request.getConfirmedPaymentAmount() != null && money(request.getConfirmedPaymentAmount()).compareTo(BigDecimal.ZERO) > 0) {
+      settlement.setConfirmedPaymentAmount(money(request.getConfirmedPaymentAmount()));
+    }
+  }
+
+  private void recalcSettlementTotals(ErpFunderBatchSettlementEntity settlement) {
+    BigDecimal systemPrincipal = BigDecimal.ZERO;
+    BigDecimal confirmedPrincipal = BigDecimal.ZERO;
+    BigDecimal interest = BigDecimal.ZERO;
+    BigDecimal storage = BigDecimal.ZERO;
+    BigDecimal handling = BigDecimal.ZERO;
+    BigDecimal codeScan = BigDecimal.ZERO;
+    BigDecimal stampTax = BigDecimal.ZERO;
+    BigDecimal deposit = BigDecimal.ZERO;
+    BigDecimal taxAdjust = money(settlement.getTaxAdjustAmount());
+    BigDecimal gross = money(settlement.getGrossWeightFeeAmount());
+    BigDecimal other = money(settlement.getOtherFeeAmount());
+    BigDecimal expected = BigDecimal.ZERO;
+    for (ErpFunderBatchSettlementItemEntity item : settlement.getItemList()) {
+      item.setExpectedPaymentAmount(calcItemExpectedPayment(item));
+      systemPrincipal = systemPrincipal.add(money(item.getSystemPrincipalAmount()));
+      confirmedPrincipal = confirmedPrincipal.add(money(item.getConfirmedPrincipalAmount()));
+      interest = interest.add(money(item.getInterestAmount()));
+      storage = storage.add(money(item.getStorageFeeAmount()));
+      handling = handling.add(money(item.getHandlingFeeAmount()));
+      codeScan = codeScan.add(money(item.getCodeScanFeeAmount()));
+      stampTax = stampTax.add(money(item.getStampTaxAmount()));
+      deposit = deposit.add(money(item.getDepositAmount()));
+      expected = expected.add(money(item.getExpectedPaymentAmount()));
+    }
+    expected = expected.add(taxAdjust).add(gross).add(other);
+    settlement.setSystemPrincipalAmount(money(systemPrincipal));
+    settlement.setConfirmedPrincipalAmount(money(confirmedPrincipal));
+    settlement.setInterestAmount(money(interest));
+    settlement.setStorageFeeAmount(money(storage));
+    settlement.setHandlingFeeAmount(money(handling));
+    settlement.setCodeScanFeeAmount(money(codeScan));
+    settlement.setStampTaxAmount(money(stampTax));
+    settlement.setDepositAmount(money(deposit));
+    settlement.setTaxAdjustAmount(taxAdjust);
+    settlement.setGrossWeightFeeAmount(gross);
+    settlement.setOtherFeeAmount(other);
+    settlement.setExpectedPaymentAmount(money(expected));
+    if (settlement.getConfirmedPaymentAmount() == null || money(settlement.getConfirmedPaymentAmount()).compareTo(BigDecimal.ZERO) <= 0) {
+      settlement.setConfirmedPaymentAmount(settlement.getExpectedPaymentAmount());
+    }
+  }
+
+  private BigDecimal calcItemExpectedPayment(ErpFunderBatchSettlementItemEntity item) {
+    return money(item.getConfirmedPrincipalAmount())
+        .add(money(item.getInterestAmount()))
+        .add(money(item.getStorageFeeAmount()))
+        .add(money(item.getHandlingFeeAmount()))
+        .add(money(item.getCodeScanFeeAmount()))
+        .add(money(item.getStampTaxAmount()))
+        .add(money(item.getDepositAmount()))
+        .add(money(item.getTaxAdjustAmount()))
+        .add(money(item.getGrossWeightFeeAmount()))
+        .add(money(item.getOtherFeeAmount()))
+        .setScale(2, RoundingMode.HALF_UP);
+  }
+
+  private int calcLoanDays(String ruleType, Date loanDate, Date settlementDate) {
+    if (loanDate == null || settlementDate == null) {
+      throw new RuntimeException("贷款日期和结算日期不能为空");
+    }
+    LocalDate loan = loanDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    LocalDate settlement = settlementDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    if (settlement.isBefore(loan)) {
+      throw new RuntimeException("结算日期不能早于资方下款日期");
+    }
+    if (RULE_RUIHEXIANG.equals(ruleType) && (loan.getYear() < settlement.getYear() || loan.getMonthValue() < settlement.getMonthValue())) {
+      return settlement.getDayOfMonth();
+    }
+    return Math.toIntExact(ChronoUnit.DAYS.between(loan, settlement)) + 1;
+  }
+
+  private int nextRepaymentLineNo(Long loanId) {
+    Integer maxLine = repaymentDao.selectList(
+        new QueryWrapper<ErpFunderLoanRepaymentEntity>()
+            .eq("loan_id", loanId)
+            .orderByDesc("line_no")
+            .last("limit 1"))
+        .stream().findFirst().map(ErpFunderLoanRepaymentEntity::getLineNo).orElse(0);
+    return maxLine + 1;
+  }
+
+  private String resolveFunderRuleType(Long funderId, String funderName) {
+    ErpPartnerEntity partner = funderId == null ? null : partnerDao.selectById(funderId);
+    String rule = partner == null ? null : StringUtils.upperCase(StringUtils.trimToEmpty(partner.getFunderFeeRuleType()));
+    if (StringUtils.isNotBlank(rule)) {
+      return rule;
+    }
+    String name = StringUtils.defaultString(funderName);
+    if (StringUtils.contains(name, "瑞和祥")) {
+      return RULE_RUIHEXIANG;
+    }
+    if (StringUtils.contains(name, "超跃")) {
+      return RULE_CHAOYUE;
+    }
+    if (StringUtils.contains(name, "万翔")) {
+      return RULE_WANXIANG;
+    }
+    return "DEFAULT";
+  }
+
+  private BigDecimal decimal3(BigDecimal value) {
+    return (value == null ? BigDecimal.ZERO : value).setScale(3, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal decimal6(BigDecimal value) {
+    return (value == null ? BigDecimal.ZERO : value).setScale(6, RoundingMode.HALF_UP);
+  }
+
+  private static class ActualOutbound {
+    private int boxes = 0;
+    private BigDecimal weight = BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP);
   }
 
   @Override

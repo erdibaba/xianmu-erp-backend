@@ -1,6 +1,7 @@
 package io.renren.modules.erp.controller;
 
 import io.renren.common.utils.R;
+import io.renren.modules.erp.entity.ErpFunderBatchSettlementEntity;
 import io.renren.modules.erp.entity.ErpFunderLoanRepaymentEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
 import io.renren.modules.erp.service.ErpFunderFinanceService;
@@ -87,6 +88,25 @@ public class ErpFunderFinanceController extends AbstractController {
   @RequiresPermissions("erp:funderloan:update")
   public R confirmRepayment(@RequestBody ErpFunderLoanRepaymentEntity repayment) {
     funderFinanceService.confirmRepayment(repayment, getUserId());
+    return R.ok();
+  }
+
+  @GetMapping("/loan/batch-options")
+  @RequiresPermissions("erp:funderloan:update")
+  public R batchOptions(@RequestParam(value = "keyword", required = false) String keyword) {
+    return R.ok().put("list", funderFinanceService.querySettleableOutboundBatches(keyword));
+  }
+
+  @PostMapping("/loan/batch-settlement/calculate")
+  @RequiresPermissions("erp:funderloan:update")
+  public R calculateBatchSettlement(@RequestBody ErpFunderBatchSettlementEntity settlement) {
+    return R.ok().put("settlement", funderFinanceService.calculateBatchSettlement(settlement));
+  }
+
+  @PostMapping("/loan/batch-settlement/confirm")
+  @RequiresPermissions("erp:funderloan:update")
+  public R confirmBatchSettlement(@RequestBody ErpFunderBatchSettlementEntity settlement) {
+    funderFinanceService.confirmBatchSettlement(settlement, getUserId());
     return R.ok();
   }
 

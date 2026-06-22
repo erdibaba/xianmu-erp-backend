@@ -3,8 +3,10 @@ package io.renren.modules.erp.service;
 import io.renren.common.utils.PageUtils;
 import io.renren.modules.erp.entity.ErpFunderLoanEntity;
 import io.renren.modules.erp.entity.ErpFunderLoanRepaymentEntity;
+import io.renren.modules.erp.entity.ErpFunderBatchSettlementEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
+import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,12 @@ public interface ErpFunderFinanceService {
   ErpFunderLoanRepaymentEntity calculateRepayment(ErpFunderLoanRepaymentEntity repayment);
 
   void confirmRepayment(ErpFunderLoanRepaymentEntity repayment, Long userId);
+
+  List<ErpSaleOutboundBatchEntity> querySettleableOutboundBatches(String keyword);
+
+  ErpFunderBatchSettlementEntity calculateBatchSettlement(ErpFunderBatchSettlementEntity settlement);
+
+  void confirmBatchSettlement(ErpFunderBatchSettlementEntity settlement, Long userId);
 
   ResponseEntity<byte[]> downloadPaymentVoucher(Long id);
 
