@@ -447,9 +447,11 @@ def parse_file(path):
             or extract_header_value(text, r"\b(ASNEQ[0-9A-Z]+)\b"),
         "customerOrderNo": extract_header_value(text, r"客户订单号[:：]\s*([^\n|]+)")
             or extract_header_value(text, r"货主单号\s*\|\s*([^\n|]+)"),
-        "driverName": extract_header_value(text, r"司机姓名[:：]\s*([^\s|]+)"),
-        "driverPhone": extract_header_value(text, r"司机电话[:：]\s*([0-9]+)"),
-        "idCardNo": extract_header_value(text, r"司机身份证[:：]?\s*([0-9Xx]+)"),
+        "driverName": extract_header_value(text, r"司机(?:姓名)?[:：]\s*([^\s|]+)"),
+        "driverPhone": extract_header_value(text, r"司机(?:电话|手机)[:：]\s*([0-9]+)")
+            or extract_header_value(text, r"联系(?:电话|方式)[:：]\s*([0-9]+)"),
+        "idCardNo": extract_header_value(text, r"司机身份证[:：]?\s*([0-9Xx]+)")
+            or extract_header_value(text, r"身份证[:：]?\s*([0-9Xx]+)"),
         "truckNo": detect_truck_no(text),
         "rawText": text
     }
