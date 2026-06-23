@@ -210,7 +210,7 @@ implements ErpSaleOrderService {
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
-        QueryWrapper<ErpSaleOrderEntity> wrapper = new QueryWrapper<ErpSaleOrderEntity>().orderByDesc(new String[]{"update_time", "id"});
+        QueryWrapper<ErpSaleOrderEntity> wrapper = new QueryWrapper<ErpSaleOrderEntity>().orderByDesc(new String[]{"create_time", "id"});
         String keyword = this.stringValue(params.get("keyword"));
         String saleType = this.stringValue(params.get("saleType"));
         String status = this.stringValue(params.get("status"));
