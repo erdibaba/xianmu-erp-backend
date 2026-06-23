@@ -273,7 +273,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     order.setConfirmId(order.getConfirmId() == null ? defaults.getConfirmId() : order.getConfirmId());
     order.setBrandName(firstNonBlank(order.getBrandName(), defaults.getBrandName()));
     order.setContractNo(firstNonBlank(order.getContractNo(), defaults.getContractNo()));
-    order.setCustomerName(firstNonBlank(order.getCustomerName(), defaults.getCustomerName()));
+    order.setCustomerName(defaults.getCustomerName());
     order.setWarehouseName(warehouse.getWarehouseName());
     order.setOrderDate(order.getOrderDate() == null ? defaults.getOrderDate() : order.getOrderDate());
     order.setExpectedArrivalDate(order.getExpectedArrivalDate() == null ? defaults.getExpectedArrivalDate() : order.getExpectedArrivalDate());
@@ -446,7 +446,7 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     draft.setBrandId(defaults.getBrandId());
     draft.setBrandName(defaults.getBrandName());
     draft.setContractNo(firstNonBlank(draft.getContractNo(), defaults.getContractNo()));
-    draft.setCustomerName(firstNonBlank(draft.getCustomerName(), defaults.getCustomerName()));
+    draft.setCustomerName(defaults.getCustomerName());
     draft.setOrderDate(draft.getOrderDate() == null ? defaults.getOrderDate() : draft.getOrderDate());
     draft.setExpectedArrivalDate(draft.getExpectedArrivalDate() == null ? defaults.getExpectedArrivalDate() : draft.getExpectedArrivalDate());
     draft.setContainerNo(firstNonBlank(draft.getContainerNo(), defaults.getContainerNo()));

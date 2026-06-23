@@ -441,8 +441,6 @@ def parse_file(path):
     text = "\n".join(text_rows)
 
     header = {
-        "customerName": extract_header_value(text, r"客户[:：]\s*([^\n|]+)")
-            or extract_header_value(text, r"货主名称\s*\|\s*([^\n|]+)"),
         "wmsOrderNo": extract_header_value(text, r"WMS订单号[:：]\s*([A-Z0-9]+)")
             or extract_header_value(text, r"\b(ASNEQ[0-9A-Z]+)\b"),
         "customerOrderNo": extract_header_value(text, r"客户订单号[:：]\s*([^\n|]+)")
@@ -499,7 +497,7 @@ def recognize(paths):
     for path in paths:
         parsed_header, parsed_items = parse_file(Path(path))
         raw_text_parts.append(parsed_header.get("rawText") or "")
-        for key in ("customerName", "wmsOrderNo", "customerOrderNo", "driverName", "driverPhone", "idCardNo", "truckNo"):
+        for key in ("wmsOrderNo", "customerOrderNo", "driverName", "driverPhone", "idCardNo", "truckNo"):
             if not header.get(key) and parsed_header.get(key):
                 header[key] = parsed_header.get(key)
         item_list.extend(parsed_items)
@@ -508,7 +506,6 @@ def recognize(paths):
         "docType": "INBOUND_RECEIPT",
         "rawText": "\n\n".join([part for part in raw_text_parts if part]),
         "inboundDraft": {
-            "customerName": header.get("customerName"),
             "driverName": header.get("driverName"),
             "truckNo": header.get("truckNo"),
             "driverPhone": header.get("driverPhone"),
