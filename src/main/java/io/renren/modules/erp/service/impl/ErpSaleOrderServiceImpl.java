@@ -929,7 +929,6 @@ implements ErpSaleOrderService {
         html.append("<div style='margin-top:24px;'>请先下载PDF合同并盖章，回传后由内部继续处理出库批次和来款水单。</div>");
         html.append("<div style='margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;'>");
         html.append("<a href='").append(CONTRACT_BASE_URL).append("pdf/").append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>下载PDF合同</a>");
-        html.append("<a href='").append(PORTAL_BASE_URL).append(this.escapeHtml(order.getContractToken())).append("' style='display:inline-block;padding:10px 16px;background:#0B1457;color:#fff;text-decoration:none;border-radius:4px;'>登录上传盖章合同</a>");
         html.append("</div>");
         html.append("</body></html>");
         return html.toString();
