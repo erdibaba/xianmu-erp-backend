@@ -3,17 +3,23 @@ package io.renren.modules.erp.service.impl;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.renren.modules.erp.service.ErpOcrService;
+import io.renren.modules.erp.vo.ErpRecognizedPackingDraftVo;
+import io.renren.modules.erp.vo.ErpRecognizedPackingItemVo;
 import io.renren.modules.erp.vo.ErpRecognizeResultVo;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
@@ -77,6 +83,107 @@ public class ErpOcrServiceImpl implements ErpOcrService {
       if (tempFile != null) {
         Files.deleteIfExists(tempFile);
       }
+    }
+  }
+
+  @Override
+  public ErpRecognizeResultVo recognize(MultipartFile[] files, String orderTypeHint) throws Exception {
+    if (files == null || files.length == 0) {
+      throw new RuntimeException("请上传单据图片或 PDF");
+    }
+    if (files.length == 1) {
+      return recognize(files[0], orderTypeHint);
+    }
+    List<ErpRecognizeResultVo> results = new ArrayList<>();
+    for (MultipartFile file : files) {
+      if (file == null || file.isEmpty()) {
+        continue;
+      }
+      results.add(recognize(file, orderTypeHint));
+    }
+    if (results.isEmpty()) {
+      throw new RuntimeException("请上传单据图片或 PDF");
+    }
+    if (!"PACKING".equalsIgnoreCase(StringUtils.defaultString(orderTypeHint))) {
+      return results.get(0);
+    }
+    return mergePackingResults(results);
+  }
+
+  private ErpRecognizeResultVo mergePackingResults(List<ErpRecognizeResultVo> results) {
+    ErpRecognizeResultVo merged = new ErpRecognizeResultVo();
+    merged.setSuccess(Boolean.TRUE);
+    merged.setDocType("PACKING_LIST");
+    StringBuilder rawText = new StringBuilder();
+    StringBuilder savedPaths = new StringBuilder();
+    ErpRecognizedPackingDraftVo draft = new ErpRecognizedPackingDraftVo();
+    List<ErpRecognizedPackingItemVo> itemList = new ArrayList<>();
+    BigDecimal totalBoxes = BigDecimal.ZERO;
+    BigDecimal totalWeight = BigDecimal.ZERO;
+    for (ErpRecognizeResultVo result : results) {
+      if (Boolean.FALSE.equals(result.getSuccess())) {
+        merged.setSuccess(Boolean.FALSE);
+        merged.setMessage(result.getMessage());
+        return merged;
+      }
+      if (StringUtils.isNotBlank(result.getRawText())) {
+        if (rawText.length() > 0) {
+          rawText.append("\n\n");
+        }
+        rawText.append(result.getRawText());
+      }
+      if (StringUtils.isNotBlank(result.getSavedFilePath())) {
+        if (savedPaths.length() > 0) {
+          savedPaths.append(";");
+        }
+        savedPaths.append(result.getSavedFilePath());
+      }
+      ErpRecognizedPackingDraftVo current = result.getPackingDraft();
+      if (current == null) {
+        continue;
+      }
+      if (StringUtils.isBlank(draft.getContractNo())) {
+        draft.setContractNo(current.getContractNo());
+      }
+      if (StringUtils.isBlank(draft.getContainerNo())) {
+        draft.setContainerNo(current.getContainerNo());
+      }
+      if (StringUtils.isBlank(draft.getShelfLifeDays())) {
+        draft.setShelfLifeDays(current.getShelfLifeDays());
+      }
+      if (current.getItemList() != null) {
+        itemList.addAll(current.getItemList());
+      }
+      totalBoxes = totalBoxes.add(decimal(current.getTotalBoxes()));
+      totalWeight = totalWeight.add(decimal(current.getTotalWeight()));
+    }
+    if (BigDecimal.ZERO.compareTo(totalBoxes) == 0) {
+      for (ErpRecognizedPackingItemVo item : itemList) {
+        totalBoxes = totalBoxes.add(decimal(item.getTotalBoxes()));
+      }
+    }
+    if (BigDecimal.ZERO.compareTo(totalWeight) == 0) {
+      for (ErpRecognizedPackingItemVo item : itemList) {
+        totalWeight = totalWeight.add(decimal(item.getTotalWeight()));
+      }
+    }
+    draft.setTotalBoxes(String.valueOf(totalBoxes.setScale(0, RoundingMode.HALF_UP).intValue()));
+    draft.setTotalWeight(totalWeight.setScale(2, RoundingMode.HALF_UP).toPlainString());
+    draft.setItemList(itemList);
+    merged.setRawText(rawText.toString());
+    merged.setSavedFilePath(savedPaths.toString());
+    merged.setPackingDraft(draft);
+    return merged;
+  }
+
+  private BigDecimal decimal(String value) {
+    if (StringUtils.isBlank(value)) {
+      return BigDecimal.ZERO;
+    }
+    try {
+      return new BigDecimal(value.replace(",", "").trim());
+    } catch (Exception ignored) {
+      return BigDecimal.ZERO;
     }
   }
 

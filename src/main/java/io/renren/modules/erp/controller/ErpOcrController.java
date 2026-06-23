@@ -20,17 +20,24 @@ public class ErpOcrController {
 
   @PostMapping("/recognize")
   @RequiresPermissions("erp:tradeorder:save")
-  public R recognize(@RequestParam("file") MultipartFile file,
+  public R recognize(@RequestParam(value = "file", required = false) MultipartFile file,
+                     @RequestParam(value = "files", required = false) MultipartFile[] files,
                      @RequestParam(value = "orderTypeHint", required = false) String orderTypeHint) throws Exception {
-    if (file == null || file.isEmpty()) {
+    MultipartFile[] uploadFiles = files != null && files.length > 0 ? files : (file == null ? null : new MultipartFile[]{file});
+    if (uploadFiles == null || uploadFiles.length == 0) {
       return R.error("\u8bf7\u4e0a\u4f20\u5355\u636e\u56fe\u7247\u6216 PDF");
     }
-    String filename = StringUtils.defaultString(file.getOriginalFilename()).toLowerCase();
-    if (!(filename.endsWith(".jpg") || filename.endsWith(".jpeg") || filename.endsWith(".png")
-        || filename.endsWith(".jfif") || filename.endsWith(".bmp") || filename.endsWith(".pdf"))) {
-      return R.error("\u4ec5\u652f\u6301 jpg/jpeg/png/jfif/bmp/pdf");
+    for (MultipartFile uploadFile : uploadFiles) {
+      if (uploadFile == null || uploadFile.isEmpty()) {
+        return R.error("\u8bf7\u4e0a\u4f20\u5355\u636e\u56fe\u7247\u6216 PDF");
+      }
+      String filename = StringUtils.defaultString(uploadFile.getOriginalFilename()).toLowerCase();
+      if (!(filename.endsWith(".jpg") || filename.endsWith(".jpeg") || filename.endsWith(".png")
+          || filename.endsWith(".jfif") || filename.endsWith(".bmp") || filename.endsWith(".pdf"))) {
+        return R.error("\u4ec5\u652f\u6301 jpg/jpeg/png/jfif/bmp/pdf");
+      }
     }
-    ErpRecognizeResultVo result = erpOcrService.recognize(file, orderTypeHint);
+    ErpRecognizeResultVo result = erpOcrService.recognize(uploadFiles, orderTypeHint);
     if (Boolean.FALSE.equals(result.getSuccess())) {
       return R.error(StringUtils.defaultIfBlank(result.getMessage(), "\u8bc6\u522b\u5931\u8d25"));
     }

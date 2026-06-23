@@ -216,8 +216,9 @@ def parse_wanyue_inbound_row(tokens):
     for idx, token in enumerate(tokens):
         if idx <= product_code_index or (weight_idx >= 0 and idx <= weight_idx):
             continue
-        if re.search(r"20\d{2}", token) or normalize_short_date(token):
-            continue
+        # 数量列在“温区/生产日期/失效日期/保质期”之前，不能把最右侧保质期 100 当成预期数/实收数。
+        if token in ("冷藏", "冷冻", "常温", "冷鲜") or re.search(r"20\d{2}", token) or normalize_short_date(token):
+            break
         box_match = re.search(r"(\d{1,4})\s*箱", token)
         if box_match:
             explicit_box_qty = int(box_match.group(1))
@@ -230,7 +231,7 @@ def parse_wanyue_inbound_row(tokens):
                 quantity_values.append(value)
     if not quantity_values:
         return None
-    expected_qty = max(quantity_values[-3:])
+    expected_qty = quantity_values[-2] if len(quantity_values) >= 2 else quantity_values[-1]
     actual_qty = explicit_box_qty if explicit_box_qty is not None else quantity_values[-1]
     if actual_qty <= 2 and expected_qty > 2:
         actual_qty = expected_qty

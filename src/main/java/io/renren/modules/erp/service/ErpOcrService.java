@@ -5,4 +5,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface ErpOcrService {
   ErpRecognizeResultVo recognize(MultipartFile file, String orderTypeHint) throws Exception;
+
+  ErpRecognizeResultVo recognize(MultipartFile[] files, String orderTypeHint) throws Exception;
 }
