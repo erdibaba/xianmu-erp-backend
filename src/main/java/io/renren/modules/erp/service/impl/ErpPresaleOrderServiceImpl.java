@@ -592,6 +592,8 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   private void normalizeConfirm(Long presaleOrderId, ErpPresaleConfirmEntity confirm, Long userId, Date now, boolean create) {
     confirm.setPresaleOrderId(presaleOrderId);
+    confirm.setContractNo(StringUtils.trimToEmpty(confirm.getContractNo()));
+    validateUniqueConfirmContractNo(confirm);
     fillConfirmPartners(confirm);
     if (StringUtils.isBlank(confirm.getColdFreshType())) {
       throw new RuntimeException("请选择客户订单确认函冷冻/冷鲜");
@@ -616,6 +618,21 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       confirm.setCreateTime(now);
     }
     confirm.setUpdateTime(now);
+  }
+
+  private void validateUniqueConfirmContractNo(ErpPresaleConfirmEntity confirm) {
+    if (StringUtils.isBlank(confirm.getContractNo())) {
+      return;
+    }
+    QueryWrapper<ErpPresaleConfirmEntity> wrapper = new QueryWrapper<ErpPresaleConfirmEntity>()
+        .eq("contract_no", confirm.getContractNo());
+    if (confirm.getId() != null) {
+      wrapper.ne("id", confirm.getId());
+    }
+    Integer count = erpPresaleConfirmDao.selectCount(wrapper);
+    if (count != null && count > 0) {
+      throw new RuntimeException("该合同号系统已存在，无法保存");
+    }
   }
 
   private void saveConfirmItems(ErpPresaleConfirmEntity confirm, Date now) {

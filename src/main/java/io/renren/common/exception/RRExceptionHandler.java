@@ -47,6 +47,9 @@ public class RRExceptionHandler {
 	@ExceptionHandler(DuplicateKeyException.class)
 	public R handleDuplicateKeyException(DuplicateKeyException e){
 		logger.error(e.getMessage(), e);
+		if(e.getMessage() != null && e.getMessage().contains("uk_presale_confirm_contract_no")){
+			return R.error("该合同号系统已存在，无法保存");
+		}
 		return R.error("数据库中已存在该记录");
 	}
 
