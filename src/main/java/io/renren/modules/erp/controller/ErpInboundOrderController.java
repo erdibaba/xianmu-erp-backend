@@ -2,7 +2,9 @@ package io.renren.modules.erp.controller;
 
 import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.R;
+import io.renren.modules.erp.entity.ErpDriverEntity;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
+import io.renren.modules.erp.service.ErpDriverService;
 import io.renren.modules.erp.service.ErpInboundOrderService;
 import io.renren.modules.erp.vo.ErpRecognizedInboundResultVo;
 import io.renren.modules.sys.controller.AbstractController;
@@ -20,6 +22,8 @@ import org.springframework.web.multipart.MultipartFile;
 public class ErpInboundOrderController extends AbstractController {
   @Autowired
   private ErpInboundOrderService erpInboundOrderService;
+  @Autowired
+  private ErpDriverService erpDriverService;
 
   @GetMapping("/list")
   @RequiresPermissions("erp:tradeorder:list")
@@ -40,6 +44,23 @@ public class ErpInboundOrderController extends AbstractController {
   public R packingBoxes(@PathVariable("presaleOrderId") Long presaleOrderId,
                         @RequestParam(value = "confirmId", required = false) Long confirmId) {
     return R.ok().put("packingBoxMap", erpInboundOrderService.getPackingBoxMap(presaleOrderId, confirmId));
+  }
+
+  @GetMapping("/driver/select")
+  @RequiresPermissions("erp:tradeorder:info")
+  public R driverSelect(@RequestParam(value = "keyword", required = false) String keyword) {
+    Map<String, Object> params = new java.util.HashMap<String, Object>();
+    params.put("page", "1");
+    params.put("limit", "15");
+    params.put("keyword", keyword);
+    return R.ok().put("page", erpDriverService.queryPage(params));
+  }
+
+  @PostMapping("/driver/save")
+  @RequiresPermissions("erp:tradeorder:save")
+  public R driverSave(@RequestBody ErpDriverEntity driver) {
+    erpDriverService.saveDriver(driver, getUserId());
+    return R.ok().put("driver", driver);
   }
 
   @PostMapping("/save")

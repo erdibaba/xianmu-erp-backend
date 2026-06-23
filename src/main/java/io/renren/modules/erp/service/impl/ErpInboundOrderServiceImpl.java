@@ -10,6 +10,7 @@ import io.renren.common.utils.Query;
 import io.renren.modules.erp.dao.ErpInboundOrderDao;
 import io.renren.modules.erp.dao.ErpInboundOrderFileDao;
 import io.renren.modules.erp.dao.ErpInboundOrderItemDao;
+import io.renren.modules.erp.dao.ErpDriverDao;
 import io.renren.modules.erp.dao.ErpPresaleConfirmDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
 import io.renren.modules.erp.dao.ErpPresalePackingDao;
@@ -19,6 +20,7 @@ import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
 import io.renren.modules.erp.entity.ErpInboundOrderFileEntity;
 import io.renren.modules.erp.entity.ErpInboundOrderItemEntity;
+import io.renren.modules.erp.entity.ErpDriverEntity;
 import io.renren.modules.erp.entity.ErpPresaleConfirmEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.entity.ErpPresalePackingEntity;
@@ -90,6 +92,8 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
   private ErpWarehouseDao erpWarehouseDao;
   @Autowired
   private ErpExpenseService erpExpenseService;
+  @Autowired
+  private ErpDriverDao erpDriverDao;
 
   @Override
   public PageUtils queryPage(Map<String, Object> params) {
@@ -274,11 +278,29 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     order.setOrderDate(order.getOrderDate() == null ? defaults.getOrderDate() : order.getOrderDate());
     order.setExpectedArrivalDate(order.getExpectedArrivalDate() == null ? defaults.getExpectedArrivalDate() : order.getExpectedArrivalDate());
     order.setContainerNo(firstNonBlank(order.getContainerNo(), defaults.getContainerNo()));
+    applyDriverSnapshot(order);
     if (create) {
       order.setCreateUserId(userId);
       order.setCreateTime(now);
     }
     order.setUpdateTime(now);
+  }
+
+  private void applyDriverSnapshot(ErpInboundOrderEntity order) {
+    if (order == null || order.getDriverId() == null || order.getDriverId() <= 0) {
+      return;
+    }
+    ErpDriverEntity driver = erpDriverDao.selectById(order.getDriverId());
+    if (driver == null) {
+      throw new RuntimeException("所选司机不存在");
+    }
+    if (driver.getStatus() != null && driver.getStatus() != 1) {
+      throw new RuntimeException("所选司机已停用");
+    }
+    order.setDriverName(firstNonBlank(driver.getDriverName(), order.getDriverName()));
+    order.setTruckNo(firstNonBlank(driver.getPlateNo(), order.getTruckNo()));
+    order.setDriverPhone(firstNonBlank(driver.getMobile(), order.getDriverPhone()));
+    order.setIdCardNo(firstNonBlank(driver.getIdCardNo(), order.getIdCardNo()));
   }
 
   private void saveItems(ErpInboundOrderEntity order, Date now) {

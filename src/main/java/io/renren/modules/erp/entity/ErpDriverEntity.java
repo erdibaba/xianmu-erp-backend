@@ -16,6 +16,7 @@ public class ErpDriverEntity implements Serializable {
   private String driverName;
   private String plateNo;
   private String mobile;
+  private String idCardNo;
   private Integer status;
   private Long createUserId;
   private Date createTime;

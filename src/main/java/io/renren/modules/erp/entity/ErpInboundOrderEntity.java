@@ -26,6 +26,7 @@ public class ErpInboundOrderEntity implements Serializable {
   private Date orderDate;
   private Date expectedArrivalDate;
   private String containerNo;
+  private Long driverId;
   private String driverName;
   private String truckNo;
   private String driverPhone;

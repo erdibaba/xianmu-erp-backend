@@ -25,7 +25,7 @@ public class ErpDriverServiceImpl extends ServiceImpl<ErpDriverDao, ErpDriverEnt
         .orderByAsc("id");
     if (StringUtils.isNotBlank(keyword)) {
       String value = keyword.trim();
-      wrapper.and(w -> w.like("driver_name", value).or().like("plate_no", value).or().like("mobile", value));
+      wrapper.and(w -> w.like("driver_name", value).or().like("plate_no", value).or().like("mobile", value).or().like("id_card_no", value));
     }
     IPage<ErpDriverEntity> page = this.page(new Query<ErpDriverEntity>().getPage(params), wrapper);
     return new PageUtils(page);
@@ -60,6 +60,7 @@ public class ErpDriverServiceImpl extends ServiceImpl<ErpDriverDao, ErpDriverEnt
     driver.setDriverName(StringUtils.trim(driver.getDriverName()));
     driver.setPlateNo(StringUtils.upperCase(StringUtils.trim(driver.getPlateNo())));
     driver.setMobile(StringUtils.trim(driver.getMobile()));
+    driver.setIdCardNo(StringUtils.trim(driver.getIdCardNo()));
     if (StringUtils.isBlank(driver.getDriverName())) {
       throw new RRException("司机姓名不能为空");
     }
