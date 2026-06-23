@@ -460,16 +460,27 @@ def parse_file(path):
     while row_idx < len(rows):
         tokens = [token.strip() for token in rows[row_idx]["texts"] if token.strip()]
         row_text = " | ".join(tokens)
+        is_table_header = (
+            ("SKU" in row_text and ("品名" in row_text or "规格" in row_text))
+            or ("商品代码" in row_text and "商品名称" in row_text)
+        )
         if not table_started:
-            if ("SKU" in row_text and "品名" in row_text) or ("商品代码" in row_text and "商品名称" in row_text):
+            if is_table_header:
                 table_started = True
             row_idx += 1
             continue
-        if "发货人" in row_text or "第" in row_text and "页" in row_text:
+        if is_table_header:
             row_idx += 1
             continue
-        if "合计" in row_text:
-            break
+        if (
+            "合计" in row_text
+            or "发货人" in row_text
+            or "收货人" in row_text
+            or ("第" in row_text and "页" in row_text)
+            or "出门证号" in row_text
+        ):
+            row_idx += 1
+            continue
 
         combined = list(tokens)
         has_code = re.search(r"(?:C)?\d{5}", row_text) is not None
