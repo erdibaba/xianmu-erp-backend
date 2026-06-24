@@ -118,6 +118,8 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
       return inbound;
     }
     loadChildren(inbound);
+    ErpInboundOrderEntity defaults = buildDefaultOrder(presaleOrderId, confirmId);
+    inbound.setCustomerName(defaults.getCustomerName());
     inbound.setUploadStatus(1);
     return inbound;
   }
@@ -399,7 +401,10 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     inbound.setBrandId(presale.getBrandId());
     inbound.setBrandName(presale.getBrandName());
     inbound.setContractNo(firstNonBlank(confirm == null ? null : confirm.getContractNo(), presale.getSellerContractNo()));
-    inbound.setCustomerName(presale.getCustomerReference());
+    inbound.setCustomerName(firstNonBlank(
+        confirm == null ? null : confirm.getBuyerPartnerName(),
+        confirm == null ? null : confirm.getCustomerReference(),
+        presale.getCustomerReference()));
     inbound.setOrderDate(presale.getOrderDate());
     inbound.setExpectedArrivalDate(confirm == null ? presale.getExpectedDate() : firstNonBlankDate(confirm.getExpectedArrivalDate(), presale.getExpectedDate()));
     inbound.setContainerNo(firstNonBlank(confirm == null ? null : confirm.getContainerNo(), packing == null ? null : packing.getContainerNo()));
