@@ -242,7 +242,7 @@
             pi.id AS packingItemId,
             io.presale_order_id AS presaleOrderId,
             io.contract_no AS contractNo,
-            io.customer_name AS customerName,
+            COALESCE(pc.buyer_partner_name, io.customer_name) AS customerName,
             io.warehouse_id AS warehouseId,
             io.warehouse_name AS warehouseName,
             io.container_no AS containerNo,
@@ -298,7 +298,10 @@
             AND (pp.container_no = io.container_no OR pp.container_no IS NULL OR io.container_no IS NULL)
           INNER JOIN erp_presale_packing_item pi ON pi.packing_id = pp.id AND pi.product_id = i.product_id
           INNER JOIN erp_presale_packing_batch b ON b.packing_item_id = pi.id
-          LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
+          LEFT JOIN erp_presale_confirm pc ON (
+            pc.id = io.confirm_id
+            OR (io.confirm_id IS NULL AND pc.presale_order_id = io.presale_order_id AND pc.contract_no = io.contract_no)
+          )
           LEFT JOIN erp_product p ON p.id = i.product_id
           LEFT JOIN <include refid="presaleOwnership"/> owner ON (
             (io.confirm_id IS NOT NULL AND owner.confirm_id = io.confirm_id)
@@ -349,7 +352,7 @@
             NULL AS packingItemId,
             io.presale_order_id AS presaleOrderId,
             io.contract_no AS contractNo,
-            io.customer_name AS customerName,
+            COALESCE(pc.buyer_partner_name, io.customer_name) AS customerName,
             io.warehouse_id AS warehouseId,
             io.warehouse_name AS warehouseName,
             io.container_no AS containerNo,
@@ -375,7 +378,10 @@
             ROUND(COALESCE(pack.total_weight, 0), 2) AS itemBatchWeight
           FROM erp_inbound_order_item i
           INNER JOIN erp_inbound_order io ON io.id = i.inbound_order_id
-          LEFT JOIN erp_presale_confirm pc ON pc.presale_order_id = io.presale_order_id
+          LEFT JOIN erp_presale_confirm pc ON (
+            pc.id = io.confirm_id
+            OR (io.confirm_id IS NULL AND pc.presale_order_id = io.presale_order_id AND pc.contract_no = io.contract_no)
+          )
           LEFT JOIN erp_product p ON p.id = i.product_id
           LEFT JOIN <include refid="presaleOwnership"/> owner ON (
             (io.confirm_id IS NOT NULL AND owner.confirm_id = io.confirm_id)
