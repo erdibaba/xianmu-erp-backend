@@ -39,6 +39,7 @@ public class ErpFunderBatchSettlementEntity implements Serializable {
   private BigDecimal depositAmount;
   private BigDecimal taxAdjustAmount;
   private BigDecimal grossWeightFeeAmount;
+  private Integer includeCodeScanFee;
   private BigDecimal otherFeeAmount;
   private BigDecimal expectedPaymentAmount;
   private BigDecimal recognizedPaymentAmount;

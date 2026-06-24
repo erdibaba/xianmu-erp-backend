@@ -12,9 +12,12 @@ import io.renren.modules.erp.dao.ErpFunderPaymentAllocationDao;
 import io.renren.modules.erp.dao.ErpFunderPaymentDao;
 import io.renren.modules.erp.dao.ErpInboundOrderDao;
 import io.renren.modules.erp.dao.ErpPartnerDao;
+import io.renren.modules.erp.dao.ErpPresaleAttachmentDao;
 import io.renren.modules.erp.dao.ErpPresaleConfirmDao;
 import io.renren.modules.erp.dao.ErpPresaleConfirmItemDao;
 import io.renren.modules.erp.dao.ErpPresaleOrderDao;
+import io.renren.modules.erp.dao.ErpPresalePackingDao;
+import io.renren.modules.erp.dao.ErpPresalePackingItemDao;
 import io.renren.modules.erp.dao.ErpSaleOrderDao;
 import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundBatchDao;
@@ -29,9 +32,12 @@ import io.renren.modules.erp.entity.ErpFunderPaymentAllocationEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
 import io.renren.modules.erp.entity.ErpPartnerEntity;
+import io.renren.modules.erp.entity.ErpPresaleAttachmentEntity;
 import io.renren.modules.erp.entity.ErpPresaleConfirmEntity;
 import io.renren.modules.erp.entity.ErpPresaleConfirmItemEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
+import io.renren.modules.erp.entity.ErpPresalePackingEntity;
+import io.renren.modules.erp.entity.ErpPresalePackingItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderEntity;
 import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
@@ -120,6 +126,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private ErpPresaleConfirmDao presaleConfirmDao;
   @Autowired
   private ErpPresaleConfirmItemDao presaleConfirmItemDao;
+  @Autowired
+  private ErpPresalePackingDao presalePackingDao;
+  @Autowired
+  private ErpPresalePackingItemDao presalePackingItemDao;
+  @Autowired
+  private ErpPresaleAttachmentDao presaleAttachmentDao;
   @Autowired
   private ErpSaleOrderDao saleOrderDao;
   @Autowired
@@ -558,9 +570,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   @Override
   public List<ErpSaleOutboundBatchEntity> querySettleableOutboundBatches(String keyword) {
     QueryWrapper<ErpSaleOutboundBatchEntity> wrapper = new QueryWrapper<ErpSaleOutboundBatchEntity>()
-        .eq("status", OUTBOUND_BATCH_CONFIRMED)
+        .and(q -> q.eq("funder_repayment_status", 1).or().like("ownership_name", "资方"))
         .notInSql("id", "select outbound_batch_id from erp_funder_batch_settlement")
-        .orderByDesc("confirm_time", "id")
+        .orderByDesc("create_time", "id")
         .last("limit 80");
     if (StringUtils.isNotBlank(keyword)) {
       wrapper.and(q -> q.like("batch_no", keyword).or().like("ownership_name", keyword));
@@ -593,9 +605,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     Date settlementDate = request.getSettlementDate() == null ? new Date() : request.getSettlementDate();
     ErpFunderBatchSettlementEntity settlement = buildBatchSettlement(request.getOutboundBatchId(), settlementDate);
+    settlement.setIncludeCodeScanFee(request.getIncludeCodeScanFee() == null ? 0 : request.getIncludeCodeScanFee());
     if (RULE_CHAOYUE.equals(settlement.getRuleType())
         && money(request.getConfirmedPrincipalAmount()).compareTo(BigDecimal.ZERO) > 0) {
       redistributeConfirmedPrincipal(settlement, money(request.getConfirmedPrincipalAmount()));
+    } else {
+      reapplySettlementRuleAmounts(settlement);
     }
     applySettlementOverrideAmounts(settlement, request);
     recalcSettlementTotals(settlement);
@@ -710,6 +725,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       loan.setUpdateTime(now);
       loanDao.updateById(loan);
     }
+    ErpSaleOutboundBatchEntity batch = outboundBatchDao.selectById(settlement.getOutboundBatchId());
+    if (batch != null) {
+      batch.setFunderRepaymentStatus(2);
+      batch.setUpdateTime(now);
+      outboundBatchDao.updateById(batch);
+    }
   }
 
   private ErpFunderBatchSettlementEntity buildBatchSettlement(Long outboundBatchId, Date settlementDate) {
@@ -717,8 +738,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (batch == null) {
       throw new RuntimeException("出库批次不存在");
     }
-    if (batch.getStatus() == null || batch.getStatus() != OUTBOUND_BATCH_CONFIRMED) {
-      throw new RuntimeException("只有已确认完成的出库批次才能生成资方结算");
+    if (StringUtils.isBlank(batch.getOwnershipName()) || !StringUtils.contains(batch.getOwnershipName(), "资方")) {
+      throw new RuntimeException("只有资方货权的出库批次才需要生成资方还款");
     }
     ErpSaleOrderEntity saleOrder = saleOrderDao.selectById(batch.getSaleOrderId());
     if (saleOrder == null) {
@@ -727,14 +748,9 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     List<ErpSaleOutboundPlanItemEntity> planItems = outboundPlanItemDao.selectList(
         new QueryWrapper<ErpSaleOutboundPlanItemEntity>().eq("batch_id", outboundBatchId).orderByAsc("line_no", "id"));
     if (planItems == null || planItems.isEmpty()) {
-      throw new RuntimeException("出库批次没有计划货物，不能生成资方结算");
+      throw new RuntimeException("出库批次没有计划货物，不能生成资方还款");
     }
-    List<ErpSaleOutboundReceiptItemEntity> actualItems = outboundReceiptItemDao.selectList(
-        new QueryWrapper<ErpSaleOutboundReceiptItemEntity>().eq("batch_id", outboundBatchId).orderByAsc("line_no", "id"));
-    if (actualItems == null || actualItems.isEmpty()) {
-      throw new RuntimeException("出库批次没有实际出库明细，不能生成资方结算");
-    }
-    Map<Long, ActualOutbound> actualMap = sumActualByPlan(actualItems);
+
     ErpFunderBatchSettlementEntity settlement = new ErpFunderBatchSettlementEntity();
     settlement.setOutboundBatchId(batch.getId());
     settlement.setSaleOrderId(batch.getSaleOrderId());
@@ -742,14 +758,15 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     settlement.setSaleOrderNo(saleOrder.getOrderNo());
     settlement.setOwnershipName(batch.getOwnershipName());
     settlement.setSettlementDate(settlementDate);
+    settlement.setIncludeCodeScanFee(0);
     List<ErpFunderBatchSettlementItemEntity> items = new ArrayList<ErpFunderBatchSettlementItemEntity>();
     Long funderId = null;
     String funderName = null;
     String ruleType = null;
     int lineNo = 1;
     for (ErpSaleOutboundPlanItemEntity plan : planItems) {
-      ActualOutbound actual = actualMap.get(plan.getId());
-      if (actual == null || actual.boxes <= 0 || actual.weight.compareTo(BigDecimal.ZERO) <= 0) {
+      int plannedBoxes = plan.getPlannedBoxes() == null ? 0 : plan.getPlannedBoxes();
+      if (plannedBoxes <= 0) {
         continue;
       }
       ErpSaleOrderItemEntity saleItem = saleOrderItemDao.selectById(plan.getSaleOrderItemId());
@@ -758,7 +775,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       }
       ErpInboundOrderEntity inbound = saleItem.getSourceInboundOrderId() == null ? null : inboundOrderDao.selectById(saleItem.getSourceInboundOrderId());
       if (inbound == null || inbound.getConfirmId() == null) {
-        throw new RuntimeException("产品" + plan.getProductCode() + "未追溯到客户订单确认函，不能生成资方结算");
+        throw new RuntimeException("产品" + plan.getProductCode() + "未追溯到客户订单确认函，不能生成资方还款");
       }
       ErpFunderLoanEntity loan = loanDao.selectOne(new QueryWrapper<ErpFunderLoanEntity>()
           .eq("confirm_id", inbound.getConfirmId())
@@ -774,10 +791,13 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       } else if (!funderId.equals(loan.getFunderId())) {
         throw new RuntimeException("一个出库批次只能结算同一个资方货权");
       }
+
       ErpPresaleConfirmEntity confirm = presaleConfirmDao.selectById(inbound.getConfirmId());
       ErpPresaleConfirmItemEntity confirmItem = findConfirmItem(inbound.getConfirmId(), plan.getProductId());
+      PackingWeight packingWeight = resolvePackingWeight(inbound.getConfirmId(), plan);
+      BigDecimal feeWeight = decimal3(packingWeight.avgWeight.multiply(new BigDecimal(plannedBoxes)));
       BigDecimal unitPrice = confirmItem == null ? BigDecimal.ZERO : decimal6(confirmItem.getUnitPriceInclTax());
-      BigDecimal costAmount = money(actual.weight.multiply(unitPrice));
+      BigDecimal costAmount = money(feeWeight.multiply(unitPrice));
       BigDecimal confirmAmount = confirm == null ? BigDecimal.ZERO : money(confirm.getTotalAmount());
       BigDecimal principal = confirmAmount.compareTo(BigDecimal.ZERO) <= 0
           ? BigDecimal.ZERO
@@ -785,6 +805,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       if (principal.compareTo(money(loan.getRemainingPrincipal())) > 0) {
         principal = money(loan.getRemainingPrincipal());
       }
+
       ErpFunderBatchSettlementItemEntity item = new ErpFunderBatchSettlementItemEntity();
       item.setOutboundBatchId(outboundBatchId);
       item.setPlanItemId(plan.getId());
@@ -798,18 +819,22 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       item.setProductName(plan.getProductName());
       item.setContainerNo(plan.getContainerNo());
       item.setFactoryNo(plan.getFactoryNo());
-      item.setShippedBoxes(actual.boxes);
-      item.setShippedWeight(actual.weight);
+      item.setShippedBoxes(plannedBoxes);
+      item.setShippedWeight(feeWeight);
+      item.setFeeWeight(feeWeight);
+      item.setPackingTotalBoxes(packingWeight.totalBoxes);
+      item.setPackingTotalWeight(packingWeight.totalWeight);
+      item.setPackingAvgWeight(packingWeight.avgWeight);
       item.setUnitPriceInclTax(unitPrice);
       item.setCostAmount(costAmount);
       item.setSystemPrincipalAmount(principal);
       item.setConfirmedPrincipalAmount(principal);
       item.setLoanDays(calcLoanDays(ruleType, loan.getLoanDate(), settlementDate));
-      applyRuleAmounts(item, ruleType, loan, confirm, saleItem, settlementDate);
+      applyRuleAmounts(item, ruleType, loan, confirm, saleItem, settlementDate, false);
       items.add(item);
     }
     if (items.isEmpty()) {
-      throw new RuntimeException("出库批次没有可结算的实际出库明细");
+      throw new RuntimeException("出库批次没有可结算的计划出库明细");
     }
     settlement.setFunderId(funderId);
     settlement.setFunderName(funderName);
@@ -848,9 +873,43 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         .last("limit 1"));
   }
 
+  private PackingWeight resolvePackingWeight(Long confirmId, ErpSaleOutboundPlanItemEntity plan) {
+    List<ErpPresalePackingEntity> packings = presalePackingDao.selectList(
+        new QueryWrapper<ErpPresalePackingEntity>()
+            .eq("confirm_id", confirmId)
+            .orderByDesc("id"));
+    if (packings == null || packings.isEmpty()) {
+      throw new RuntimeException("确认函未上传装箱单，不能计算资方计费重量：" + plan.getProductCode());
+    }
+    BigDecimal totalWeight = BigDecimal.ZERO;
+    int totalBoxes = 0;
+    for (ErpPresalePackingEntity packing : packings) {
+      QueryWrapper<ErpPresalePackingItemEntity> wrapper = new QueryWrapper<ErpPresalePackingItemEntity>()
+          .eq("packing_id", packing.getId())
+          .eq("product_id", plan.getProductId());
+      if (StringUtils.isNotBlank(plan.getFactoryNo())) {
+        wrapper.eq("factory_no", plan.getFactoryNo());
+      }
+      List<ErpPresalePackingItemEntity> items = presalePackingItemDao.selectList(wrapper);
+      for (ErpPresalePackingItemEntity item : items) {
+        totalBoxes += item.getTotalBoxes() == null ? 0 : item.getTotalBoxes();
+        totalWeight = totalWeight.add(decimal3(item.getTotalWeight()));
+      }
+    }
+    if (totalBoxes <= 0 || totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("装箱单未匹配到产品重量/箱数，不能计算资方计费重量：" + plan.getProductCode());
+    }
+    PackingWeight weight = new PackingWeight();
+    weight.totalBoxes = totalBoxes;
+    weight.totalWeight = decimal3(totalWeight);
+    weight.avgWeight = totalWeight.divide(new BigDecimal(totalBoxes), 6, RoundingMode.HALF_UP);
+    return weight;
+  }
+
   private void applyRuleAmounts(ErpFunderBatchSettlementItemEntity item, String ruleType,
                                 ErpFunderLoanEntity loan, ErpPresaleConfirmEntity confirm,
-                                ErpSaleOrderItemEntity saleItem, Date settlementDate) {
+                                ErpSaleOrderItemEntity saleItem, Date settlementDate,
+                                boolean includeCodeScanFee) {
     BigDecimal principal = money(item.getConfirmedPrincipalAmount());
     BigDecimal interest = BigDecimal.ZERO;
     if (RULE_RUIHEXIANG.equals(ruleType)) {
@@ -865,7 +924,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       interest = principal.multiply(RATE_WANXIANG)
           .divide(DAYS_PER_YEAR_360, 8, RoundingMode.HALF_UP)
           .multiply(new BigDecimal(item.getLoanDays()));
-      applyWanxiangFeeAmounts(item, confirm, saleItem, settlementDate);
+      applyWanxiangFeeAmounts(item, confirm, saleItem, settlementDate, includeCodeScanFee);
     } else {
       interest = principal.multiply(rate(loan.getAnnualInterestRate()))
           .divide(ONE_HUNDRED, 8, RoundingMode.HALF_UP)
@@ -879,7 +938,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private void applyWanxiangFeeAmounts(ErpFunderBatchSettlementItemEntity item,
                                        ErpPresaleConfirmEntity confirm,
                                        ErpSaleOrderItemEntity saleItem,
-                                       Date settlementDate) {
+                                       Date settlementDate,
+                                       boolean includeCodeScanFee) {
     String coldFreshType = confirm == null ? "" : StringUtils.defaultString(confirm.getColdFreshType());
     boolean frozen = StringUtils.contains(coldFreshType, "冻");
     ErpWarehouseFeeRateEntity rate = loadWarehouseRate(saleItem == null ? null : saleItem.getWarehouseId(), settlementDate);
@@ -890,11 +950,11 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         : money(frozen ? rate.getFrozenColdFee() : rate.getChilledColdFee());
     item.setStorageFeeAmount(money(storageRate.multiply(weightTon)));
     item.setHandlingFeeAmount(money(handlingRate.multiply(weightTon)));
-    item.setCodeScanFeeAmount(calcCodeScanFee(saleItem == null ? null : saleItem.getWarehouseName(), item));
+    item.setCodeScanFeeAmount(includeCodeScanFee ? calcCodeScanFee(saleItem == null ? null : saleItem.getWarehouseName(), item) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
     item.setStampTaxAmount(money(decimal3(item.getShippedWeight()).multiply(decimal6(item.getUnitPriceInclTax())).multiply(new BigDecimal("0.0006"))));
     item.setDepositAmount(money(item.getCostAmount().multiply(new BigDecimal("0.25"))));
     item.setTaxAdjustAmount(money(item.getTaxAdjustAmount()));
-    item.setGrossWeightFeeAmount(money(item.getGrossWeightFeeAmount()));
+    item.setGrossWeightFeeAmount(calcGrossWeightFee(item, confirm, saleItem, settlementDate));
     item.setOtherFeeAmount(money(item.getOtherFeeAmount()));
   }
 
@@ -904,6 +964,97 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     BigDecimal weightTon = decimal3(item.getShippedWeight()).divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
     return money(new BigDecimal("15").multiply(weightTon));
+  }
+
+  private BigDecimal calcGrossWeightFee(ErpFunderBatchSettlementItemEntity item,
+                                        ErpPresaleConfirmEntity confirm,
+                                        ErpSaleOrderItemEntity saleItem,
+                                        Date settlementDate) {
+    if (!shouldCalcGrossWeightFee(saleItem)) {
+      item.setCustomsGrossWeight(null);
+      item.setGrossDiffWeight(null);
+      item.setGrossFeeDays(null);
+      item.setGrossFeeRate(null);
+      return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+    BigDecimal customsGrossWeight = loadCustomsGrossWeight(confirm == null ? null : confirm.getId());
+    PackingWeight confirmPacking = resolveConfirmPackingWeight(confirm == null ? null : confirm.getId());
+    if (customsGrossWeight.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("报关单未维护确认毛重，不能计算毛重费用：" + item.getConfirmContractNo());
+    }
+    if (confirmPacking.totalBoxes <= 0 || confirmPacking.totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("装箱单总箱数/总重量为空，不能计算毛重费用：" + item.getConfirmContractNo());
+    }
+    BigDecimal totalDiff = decimal3(customsGrossWeight.subtract(confirmPacking.totalWeight));
+    BigDecimal diffPerBox = totalDiff.divide(new BigDecimal(confirmPacking.totalBoxes), 6, RoundingMode.HALF_UP);
+    BigDecimal currentDiff = decimal3(diffPerBox.multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
+    boolean frozen = isFrozen(confirm == null ? null : confirm.getColdFreshType());
+    BigDecimal rate = frozen ? new BigDecimal("2.10") : new BigDecimal("2.80");
+    int days = calcGrossFeeDays(saleItem == null ? null : saleItem.getInboundDate(), settlementDate, frozen);
+    BigDecimal fee = currentDiff.divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP)
+        .multiply(rate)
+        .multiply(new BigDecimal(days));
+    item.setCustomsGrossWeight(decimal3(customsGrossWeight));
+    item.setGrossDiffWeight(currentDiff);
+    item.setGrossFeeDays(days);
+    item.setGrossFeeRate(rate);
+    return money(fee);
+  }
+
+  private boolean shouldCalcGrossWeightFee(ErpSaleOrderItemEntity saleItem) {
+    String text = StringUtils.defaultString(saleItem == null ? null : saleItem.getWarehouseName()) + " "
+        + StringUtils.defaultString(saleItem == null ? null : saleItem.getContractPortCold());
+    return StringUtils.contains(text, "上海万呈") || StringUtils.contains(text, "万纬");
+  }
+
+  private boolean isFrozen(String coldFreshType) {
+    return StringUtils.contains(StringUtils.defaultString(coldFreshType), "冻");
+  }
+
+  private int calcGrossFeeDays(Date inboundDate, Date settlementDate, boolean frozen) {
+    if (inboundDate == null || settlementDate == null) {
+      throw new RuntimeException("入库日期和结算日期不能为空，不能计算毛重费用");
+    }
+    LocalDate inbound = inboundDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    LocalDate settlement = settlementDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    int actualDays = Math.toIntExact(ChronoUnit.DAYS.between(inbound, settlement)) + 1;
+    if (actualDays < 1) {
+      actualDays = 1;
+    }
+    return Math.max(actualDays, frozen ? 20 : 5);
+  }
+
+  private BigDecimal loadCustomsGrossWeight(Long confirmId) {
+    if (confirmId == null) {
+      return BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP);
+    }
+    List<ErpPresaleAttachmentEntity> attachments = presaleAttachmentDao.selectList(
+        new QueryWrapper<ErpPresaleAttachmentEntity>()
+            .eq("confirm_id", confirmId)
+            .eq("attachment_type", "CUSTOMS")
+            .orderByDesc("id"));
+    BigDecimal total = BigDecimal.ZERO;
+    for (ErpPresaleAttachmentEntity attachment : attachments) {
+      total = total.add(decimal3(attachment.getConfirmedGrossWeight()));
+    }
+    return decimal3(total);
+  }
+
+  private PackingWeight resolveConfirmPackingWeight(Long confirmId) {
+    PackingWeight result = new PackingWeight();
+    if (confirmId == null) {
+      return result;
+    }
+    List<ErpPresalePackingEntity> packings = presalePackingDao.selectList(
+        new QueryWrapper<ErpPresalePackingEntity>().eq("confirm_id", confirmId));
+    for (ErpPresalePackingEntity packing : packings) {
+      result.totalBoxes += packing.getTotalBoxes() == null ? 0 : packing.getTotalBoxes();
+      result.totalWeight = result.totalWeight.add(decimal3(packing.getTotalWeight()));
+    }
+    if (result.totalBoxes > 0) {
+      result.avgWeight = result.totalWeight.divide(new BigDecimal(result.totalBoxes), 6, RoundingMode.HALF_UP);
+    }
+    return result;
   }
 
   private ErpWarehouseFeeRateEntity loadWarehouseRate(Long warehouseId, Date businessDate) {
@@ -940,11 +1091,26 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       ErpFunderLoanEntity loan = loanDao.selectById(item.getLoanId());
       ErpPresaleConfirmEntity confirm = item.getConfirmId() == null ? null : presaleConfirmDao.selectById(item.getConfirmId());
       ErpSaleOrderItemEntity saleItem = item.getSaleOrderItemId() == null ? null : saleOrderItemDao.selectById(item.getSaleOrderItemId());
-      applyRuleAmounts(item, settlement.getRuleType(), loan, confirm, saleItem, settlement.getSettlementDate());
+      applyRuleAmounts(item, settlement.getRuleType(), loan, confirm, saleItem, settlement.getSettlementDate(),
+          Integer.valueOf(1).equals(settlement.getIncludeCodeScanFee()));
+    }
+  }
+
+  private void reapplySettlementRuleAmounts(ErpFunderBatchSettlementEntity settlement) {
+    if (settlement == null || settlement.getItemList() == null) {
+      return;
+    }
+    for (ErpFunderBatchSettlementItemEntity item : settlement.getItemList()) {
+      ErpFunderLoanEntity loan = loanDao.selectById(item.getLoanId());
+      ErpPresaleConfirmEntity confirm = item.getConfirmId() == null ? null : presaleConfirmDao.selectById(item.getConfirmId());
+      ErpSaleOrderItemEntity saleItem = item.getSaleOrderItemId() == null ? null : saleOrderItemDao.selectById(item.getSaleOrderItemId());
+      applyRuleAmounts(item, settlement.getRuleType(), loan, confirm, saleItem, settlement.getSettlementDate(),
+          Integer.valueOf(1).equals(settlement.getIncludeCodeScanFee()));
     }
   }
 
   private void applySettlementOverrideAmounts(ErpFunderBatchSettlementEntity settlement, ErpFunderBatchSettlementEntity request) {
+    settlement.setIncludeCodeScanFee(request.getIncludeCodeScanFee() == null ? 0 : request.getIncludeCodeScanFee());
     settlement.setTaxAdjustAmount(money(request.getTaxAdjustAmount()));
     settlement.setGrossWeightFeeAmount(money(request.getGrossWeightFeeAmount()));
     settlement.setOtherFeeAmount(money(request.getOtherFeeAmount()));
@@ -1069,6 +1235,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private static class ActualOutbound {
     private int boxes = 0;
     private BigDecimal weight = BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP);
+  }
+
+  private static class PackingWeight {
+    private int totalBoxes = 0;
+    private BigDecimal totalWeight = BigDecimal.ZERO.setScale(3, RoundingMode.HALF_UP);
+    private BigDecimal avgWeight = BigDecimal.ZERO.setScale(6, RoundingMode.HALF_UP);
   }
 
   @Override

@@ -549,6 +549,7 @@ implements ErpSaleOrderService {
         batch.setPlateNo(driver.getPlateNo());
         batch.setDriverMobile(driver.getMobile());
         batch.setOwnershipName(ownershipName);
+        batch.setFunderRepaymentStatus(StringUtils.contains(StringUtils.defaultString(ownershipName), "资方") ? 1 : 0);
         batch.setReceiptCount(0);
         batch.setShippedTotalBoxes(0);
         batch.setShippedTotalWeight(BigDecimal.ZERO);

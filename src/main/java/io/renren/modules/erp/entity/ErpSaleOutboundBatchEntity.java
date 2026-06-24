@@ -25,6 +25,7 @@ public class ErpSaleOutboundBatchEntity implements Serializable {
   private String plateNo;
   private String driverMobile;
   private String ownershipName;
+  private Integer funderRepaymentStatus;
   private Long bankSlipFileId;
   private Integer receiptCount;
   private Integer shippedTotalBoxes;

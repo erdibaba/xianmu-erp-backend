@@ -29,6 +29,14 @@ public class ErpFunderBatchSettlementItemEntity implements Serializable {
   private String factoryNo;
   private Integer shippedBoxes;
   private BigDecimal shippedWeight;
+  private BigDecimal feeWeight;
+  private Integer packingTotalBoxes;
+  private BigDecimal packingTotalWeight;
+  private BigDecimal packingAvgWeight;
+  private BigDecimal customsGrossWeight;
+  private BigDecimal grossDiffWeight;
+  private Integer grossFeeDays;
+  private BigDecimal grossFeeRate;
   private BigDecimal unitPriceInclTax;
   private BigDecimal costAmount;
   private BigDecimal systemPrincipalAmount;

@@ -3,6 +3,7 @@ package io.renren.modules.erp.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 import lombok.Data;
 
@@ -19,6 +20,9 @@ public class ErpPresaleAttachmentEntity implements Serializable {
   private String filePath;
   private String fileName;
   private String remark;
+  private BigDecimal recognizedGrossWeight;
+  private BigDecimal confirmedGrossWeight;
+  private String rawText;
   private Long createUserId;
   private Date createTime;
   private Date updateTime;

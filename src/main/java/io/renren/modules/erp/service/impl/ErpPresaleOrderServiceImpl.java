@@ -25,8 +25,10 @@ import io.renren.modules.erp.entity.ErpPresalePackingItemEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderEntity;
 import io.renren.modules.erp.entity.ErpPresaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpProductEntity;
+import io.renren.modules.erp.service.ErpOcrService;
 import io.renren.modules.erp.service.ErpPresaleOrderService;
 import io.renren.modules.erp.service.ErpWecomService;
+import io.renren.modules.erp.vo.ErpRecognizeResultVo;
 import io.renren.modules.erp.vo.ErpRecognizedPackingBatchVo;
 import io.renren.modules.erp.vo.ErpRecognizedPackingDraftVo;
 import io.renren.modules.erp.vo.ErpRecognizedPackingItemVo;
@@ -47,6 +49,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ContentDisposition;
@@ -80,6 +84,12 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
   private ErpPartnerDao erpPartnerDao;
   @Autowired
   private ErpWecomService erpWecomService;
+  @Autowired
+  private ErpOcrService erpOcrService;
+
+  private static final Pattern CUSTOMS_GROSS_WEIGHT_PATTERN = Pattern.compile(
+      "(?:毛重|毛\\s*重|Gross\\s*Weight)[^0-9]{0,20}([0-9][0-9,]*(?:\\.[0-9]+)?)",
+      Pattern.CASE_INSENSITIVE);
 
   @Override
   public PageUtils queryPage(Map<String, Object> params) {
@@ -334,8 +344,16 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     String suffix = getSuffix(file.getOriginalFilename());
     Path tempFile = Files.createTempFile("erp-presale-attachment-", suffix);
     try {
-      file.transferTo(tempFile.toFile());
+      Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
       Path savedPath = saveAttachmentFile(file, tempFile, suffix, normalizedType);
+      ErpRecognizeResultVo ocrResult = null;
+      if ("CUSTOMS".equals(normalizedType)) {
+        try {
+          ocrResult = erpOcrService.recognize(file, "customs_declaration");
+        } catch (Exception ignored) {
+          ocrResult = null;
+        }
+      }
       ErpPresaleAttachmentEntity existing = "QUARANTINE".equals(normalizedType) ? null : findAttachment(presaleOrderId, confirmId, normalizedType);
       Date now = new Date();
       if (existing == null) {
@@ -349,6 +367,13 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       existing.setConfirmId(confirmId);
       existing.setFilePath(savedPath.toAbsolutePath().toString());
       existing.setFileName(extractFileName(savedPath.toString()));
+      if (ocrResult != null) {
+        String rawText = StringUtils.defaultString(ocrResult.getRawText());
+        BigDecimal grossWeight = extractCustomsGrossWeight(rawText);
+        existing.setRawText(rawText);
+        existing.setRecognizedGrossWeight(grossWeight);
+        existing.setConfirmedGrossWeight(grossWeight);
+      }
       existing.setUpdateTime(now);
       if (existing.getId() == null) {
         erpPresaleAttachmentDao.insert(existing);
@@ -1114,6 +1139,22 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       return ".tmp";
     }
     return filename.substring(filename.lastIndexOf("."));
+  }
+
+  private BigDecimal extractCustomsGrossWeight(String rawText) {
+    if (StringUtils.isBlank(rawText)) {
+      return null;
+    }
+    Matcher matcher = CUSTOMS_GROSS_WEIGHT_PATTERN.matcher(rawText);
+    if (!matcher.find()) {
+      return null;
+    }
+    String value = StringUtils.replace(matcher.group(1), ",", "");
+    try {
+      return new BigDecimal(value).setScale(3, RoundingMode.HALF_UP);
+    } catch (Exception ignored) {
+      return null;
+    }
   }
 
   private Path saveAttachmentFile(MultipartFile file, Path tempFile, String suffix, String attachmentType) throws Exception {
