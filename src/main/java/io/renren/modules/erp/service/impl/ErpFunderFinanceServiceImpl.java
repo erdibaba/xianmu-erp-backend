@@ -931,6 +931,11 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
           .divide(DAYS_PER_YEAR, 8, RoundingMode.HALF_UP)
           .multiply(new BigDecimal(item.getLoanDays()));
     }
+    if (!RULE_WANXIANG.equals(ruleType)) {
+      item.setCodeScanFeeAmount(includeCodeScanFee
+          ? calcCodeScanFee(saleItem == null ? null : saleItem.getWarehouseName(), item)
+          : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+    }
     item.setInterestAmount(money(interest));
     item.setExpectedPaymentAmount(calcItemExpectedPayment(item));
   }
@@ -959,10 +964,12 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   }
 
   private BigDecimal calcCodeScanFee(String warehouseName, ErpFunderBatchSettlementItemEntity item) {
-    if (StringUtils.contains(StringUtils.defaultString(warehouseName), "上海")) {
+    String name = StringUtils.defaultString(warehouseName);
+    if (StringUtils.contains(name, "上海")) {
       return money(new BigDecimal("0.35").multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
     }
-    BigDecimal weightTon = decimal3(item.getShippedWeight()).divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
+    BigDecimal weightTon = decimal3(item.getFeeWeight() == null ? item.getShippedWeight() : item.getFeeWeight())
+        .divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
     return money(new BigDecimal("15").multiply(weightTon));
   }
 
