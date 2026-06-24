@@ -403,7 +403,6 @@ public class ErpInboundOrderServiceImpl extends ServiceImpl<ErpInboundOrderDao, 
     inbound.setContractNo(firstNonBlank(confirm == null ? null : confirm.getContractNo(), presale.getSellerContractNo()));
     inbound.setCustomerName(firstNonBlank(
         confirm == null ? null : confirm.getBuyerPartnerName(),
-        confirm == null ? null : confirm.getCustomerReference(),
         presale.getCustomerReference()));
     inbound.setOrderDate(presale.getOrderDate());
     inbound.setExpectedArrivalDate(confirm == null ? presale.getExpectedDate() : firstNonBlankDate(confirm.getExpectedArrivalDate(), presale.getExpectedDate()));

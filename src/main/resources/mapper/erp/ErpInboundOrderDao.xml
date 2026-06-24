@@ -10,7 +10,7 @@
       p.brand_id AS brandId,
       p.brand_name AS brandName,
       COALESCE(io.contract_no, pc.contract_no, p.seller_contract_no) AS contractNo,
-      COALESCE(pc.buyer_partner_name, pc.customer_reference, p.customer_reference) AS customerName,
+      COALESCE(pc.buyer_partner_name, p.customer_reference) AS customerName,
       io.warehouse_id AS warehouseId,
       io.warehouse_name AS warehouseName,
       COALESCE(io.order_date, p.order_date) AS orderDate,
@@ -46,7 +46,6 @@
         p.seller_contract_no LIKE CONCAT('%', #{keyword}, '%')
         OR p.customer_reference LIKE CONCAT('%', #{keyword}, '%')
         OR pc.buyer_partner_name LIKE CONCAT('%', #{keyword}, '%')
-        OR pc.customer_reference LIKE CONCAT('%', #{keyword}, '%')
         OR p.brand_name LIKE CONCAT('%', #{keyword}, '%')
         OR pc.contract_no LIKE CONCAT('%', #{keyword}, '%')
       )
