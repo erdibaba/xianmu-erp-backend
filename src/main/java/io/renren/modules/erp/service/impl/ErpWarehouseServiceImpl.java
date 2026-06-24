@@ -59,6 +59,8 @@ public class ErpWarehouseServiceImpl extends ServiceImpl<ErpWarehouseDao, ErpWar
         warehouse.setChilledStorageFee(rate.getChilledStorageFee());
         warehouse.setFrozenColdFee(rate.getFrozenColdFee());
         warehouse.setChilledColdFee(rate.getChilledColdFee());
+        warehouse.setScanFeeUnit(rate.getScanFeeUnit());
+        warehouse.setScanFeeRate(rate.getScanFeeRate());
         warehouse.setFeeUnit("元/吨");
       }
     }

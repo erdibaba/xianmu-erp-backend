@@ -23,6 +23,8 @@ public class ErpWarehouseFeeRateEntity implements Serializable {
   private BigDecimal chilledStorageFee;
   private BigDecimal frozenColdFee;
   private BigDecimal chilledColdFee;
+  private String scanFeeUnit;
+  private BigDecimal scanFeeRate;
   private String remark;
   private Integer status;
   private Long createUserId;

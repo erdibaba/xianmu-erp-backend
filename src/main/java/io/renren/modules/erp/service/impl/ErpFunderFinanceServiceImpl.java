@@ -23,6 +23,7 @@ import io.renren.modules.erp.dao.ErpSaleOrderItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundBatchDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundPlanItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundReceiptItemDao;
+import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.dao.ErpWarehouseFeeRateDao;
 import io.renren.modules.erp.entity.ErpFunderBatchSettlementEntity;
 import io.renren.modules.erp.entity.ErpFunderBatchSettlementItemEntity;
@@ -43,6 +44,7 @@ import io.renren.modules.erp.entity.ErpSaleOrderItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundBatchEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundPlanItemEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundReceiptItemEntity;
+import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.entity.ErpWarehouseFeeRateEntity;
 import io.renren.modules.erp.service.ErpFunderFinanceService;
 import io.renren.modules.erp.service.ErpOcrService;
@@ -144,6 +146,8 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   private ErpSaleOutboundReceiptItemDao outboundReceiptItemDao;
   @Autowired
   private ErpInboundOrderDao inboundOrderDao;
+  @Autowired
+  private ErpWarehouseDao warehouseDao;
   @Autowired
   private ErpWarehouseFeeRateDao warehouseFeeRateDao;
   @Autowired
@@ -933,7 +937,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     if (!RULE_WANXIANG.equals(ruleType)) {
       item.setCodeScanFeeAmount(includeCodeScanFee
-          ? calcCodeScanFee(saleItem == null ? null : saleItem.getWarehouseName(), item)
+          ? calcCodeScanFee(saleItem, item, settlementDate)
           : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
     }
     item.setInterestAmount(money(interest));
@@ -955,7 +959,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         : money(frozen ? rate.getFrozenColdFee() : rate.getChilledColdFee());
     item.setStorageFeeAmount(money(storageRate.multiply(weightTon)));
     item.setHandlingFeeAmount(money(handlingRate.multiply(weightTon)));
-    item.setCodeScanFeeAmount(includeCodeScanFee ? calcCodeScanFee(saleItem == null ? null : saleItem.getWarehouseName(), item) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+    item.setCodeScanFeeAmount(includeCodeScanFee ? calcCodeScanFee(saleItem, item, settlementDate) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
     item.setStampTaxAmount(money(decimal3(item.getShippedWeight()).multiply(decimal6(item.getUnitPriceInclTax())).multiply(new BigDecimal("0.0006"))));
     item.setDepositAmount(money(item.getCostAmount().multiply(new BigDecimal("0.25"))));
     item.setTaxAdjustAmount(money(item.getTaxAdjustAmount()));
@@ -963,14 +967,26 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     item.setOtherFeeAmount(money(item.getOtherFeeAmount()));
   }
 
-  private BigDecimal calcCodeScanFee(String warehouseName, ErpFunderBatchSettlementItemEntity item) {
-    String name = StringUtils.defaultString(warehouseName);
-    if (StringUtils.contains(name, "上海")) {
-      return money(new BigDecimal("0.35").multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
+  private BigDecimal calcCodeScanFee(ErpSaleOrderItemEntity saleItem,
+                                     ErpFunderBatchSettlementItemEntity item,
+                                     Date settlementDate) {
+    if (saleItem == null || saleItem.getWarehouseId() == null) {
+      return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+    ErpWarehouseEntity warehouse = warehouseDao.selectById(saleItem.getWarehouseId());
+    if (warehouse == null || warehouse.getScanFeeEnabled() == null || warehouse.getScanFeeEnabled() != 1) {
+      return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+    ErpWarehouseFeeRateEntity rate = loadWarehouseRate(saleItem.getWarehouseId(), settlementDate);
+    if (rate == null || rate.getScanFeeRate() == null || rate.getScanFeeRate().compareTo(BigDecimal.ZERO) <= 0) {
+      return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+    if ("BOX".equals(rate.getScanFeeUnit())) {
+      return money(rate.getScanFeeRate().multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
     }
     BigDecimal weightTon = decimal3(item.getFeeWeight() == null ? item.getShippedWeight() : item.getFeeWeight())
         .divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP);
-    return money(new BigDecimal("15").multiply(weightTon));
+    return money(rate.getScanFeeRate().multiply(weightTon));
   }
 
   private BigDecimal calcGrossWeightFee(ErpFunderBatchSettlementItemEntity item,

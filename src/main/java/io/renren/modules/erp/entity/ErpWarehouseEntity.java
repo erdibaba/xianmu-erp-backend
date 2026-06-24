@@ -1,5 +1,6 @@
 package io.renren.modules.erp.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.io.Serializable;
@@ -29,9 +30,14 @@ public class ErpWarehouseEntity implements Serializable {
   private BigDecimal frozenColdFee;
   private BigDecimal chilledColdFee;
   private String feeUnit;
+  private Integer scanFeeEnabled;
   private Integer status;
   private String remark;
   private Long createUserId;
   private Date createTime;
   private Date updateTime;
+  @TableField(exist = false)
+  private String scanFeeUnit;
+  @TableField(exist = false)
+  private BigDecimal scanFeeRate;
 }

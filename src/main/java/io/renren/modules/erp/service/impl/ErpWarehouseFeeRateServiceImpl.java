@@ -8,8 +8,10 @@ import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.entity.ErpWarehouseFeeRateEntity;
 import io.renren.modules.erp.service.ErpWarehouseFeeRateService;
 import io.renren.modules.erp.service.ErpWarehouseService;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
+import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -65,6 +67,15 @@ public class ErpWarehouseFeeRateServiceImpl extends ServiceImpl<ErpWarehouseFeeR
     }
     if (rate.getEffectiveDate() == null) {
       throw new RRException("生效日期不能为空");
+    }
+    if (StringUtils.isBlank(rate.getScanFeeUnit())) {
+      rate.setScanFeeUnit("TON");
+    }
+    if (!"BOX".equals(rate.getScanFeeUnit()) && !"TON".equals(rate.getScanFeeUnit())) {
+      throw new RRException("扫码费计费方式不正确");
+    }
+    if (rate.getScanFeeRate() == null) {
+      rate.setScanFeeRate(BigDecimal.ZERO);
     }
     QueryWrapper<ErpWarehouseFeeRateEntity> wrapper = new QueryWrapper<ErpWarehouseFeeRateEntity>()
         .eq("warehouse_id", rate.getWarehouseId())
