@@ -235,6 +235,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     saveConfirm(order, userId, now);
     autoSendShipNotice(order.getId(), userId);
     savePacking(order, userId, now);
+    saveCustomsInfo(order, now);
   }
 
   @Override
@@ -248,6 +249,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
     replaceConfirm(order, userId, now);
     autoSendShipNotice(order.getId(), userId);
     replacePacking(order, userId, now);
+    saveCustomsInfo(order, now);
   }
 
   @Override
@@ -1132,6 +1134,31 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       wrapper.eq("presale_order_id", presaleOrderId);
     }
     return erpPresaleAttachmentDao.selectList(wrapper.orderByDesc("id"));
+  }
+
+  private void saveCustomsInfo(ErpPresaleOrderEntity order, Date now) {
+    if (order == null || order.getCustomsInfo() == null) {
+      return;
+    }
+    ErpPresaleAttachmentEntity customsInfo = order.getCustomsInfo();
+    Long attachmentId = customsInfo.getId();
+    if (attachmentId == null || attachmentId <= 0) {
+      return;
+    }
+    ErpPresaleAttachmentEntity existing = erpPresaleAttachmentDao.selectById(attachmentId);
+    if (existing == null || !"CUSTOMS".equals(existing.getAttachmentType())) {
+      return;
+    }
+    if (order.getId() != null && !String.valueOf(order.getId()).equals(String.valueOf(existing.getPresaleOrderId()))) {
+      return;
+    }
+    if (customsInfo.getConfirmId() != null && existing.getConfirmId() != null
+        && !String.valueOf(customsInfo.getConfirmId()).equals(String.valueOf(existing.getConfirmId()))) {
+      return;
+    }
+    existing.setConfirmedGrossWeight(customsInfo.getConfirmedGrossWeight());
+    existing.setUpdateTime(now);
+    erpPresaleAttachmentDao.updateById(existing);
   }
 
   private String getSuffix(String filename) {
