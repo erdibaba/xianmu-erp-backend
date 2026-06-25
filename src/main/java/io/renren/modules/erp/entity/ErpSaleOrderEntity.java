@@ -21,6 +21,8 @@ public class ErpSaleOrderEntity implements Serializable {
   private String saleType;
   private Long secondaryPartnerId;
   private String secondaryPartnerName;
+  private Long salespersonId;
+  private String salespersonName;
   private Long warehouseId;
   private String warehouseName;
   private String contractNo;

@@ -49,6 +49,7 @@ import io.renren.modules.erp.dao.ErpSaleOutboundPlanItemDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundScanDao;
 import io.renren.modules.erp.dao.ErpSaleOutboundScanItemDao;
 import io.renren.modules.erp.dao.ErpSaleUploadNoticeDao;
+import io.renren.modules.erp.dao.ErpSalespersonDao;
 import io.renren.modules.erp.dao.ErpStockLedgerDao;
 import io.renren.modules.erp.dao.ErpWarehouseDao;
 import io.renren.modules.erp.entity.ErpInboundOrderEntity;
@@ -74,6 +75,7 @@ import io.renren.modules.erp.dao.ErpDriverDao;
 import io.renren.modules.erp.entity.ErpSaleOutboundScanEntity;
 import io.renren.modules.erp.entity.ErpSaleOutboundScanItemEntity;
 import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
+import io.renren.modules.erp.entity.ErpSalespersonEntity;
 import io.renren.modules.erp.entity.ErpStockLedgerEntity;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
 import io.renren.modules.erp.service.ErpSaleOrderService;
@@ -207,6 +209,8 @@ implements ErpSaleOrderService {
     private ErpFunderPaymentDao erpFunderPaymentDao;
     @Autowired
     private ErpFunderLoanDao erpFunderLoanDao;
+    @Autowired
+    private ErpSalespersonDao erpSalespersonDao;
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
@@ -215,7 +219,7 @@ implements ErpSaleOrderService {
         String saleType = this.stringValue(params.get("saleType"));
         String status = this.stringValue(params.get("status"));
         if (StringUtils.isNotBlank((String)keyword)) {
-            wrapper.and(w -> w.like("order_no", keyword).or().like("contract_no", keyword).or().like("secondary_partner_name", keyword).or().like("warehouse_name", keyword));
+            wrapper.and(w -> w.like("order_no", keyword).or().like("contract_no", keyword).or().like("secondary_partner_name", keyword).or().like("warehouse_name", keyword).or().like("salesperson_name", keyword));
         }
         if (StringUtils.isNotBlank((String)saleType)) {
             wrapper.eq("sale_type", saleType);
@@ -1111,6 +1115,7 @@ implements ErpSaleOrderService {
         }
         this.fillPartnerSnapshot(order);
         this.fillWarehouseSnapshot(order);
+        this.fillSalespersonSnapshot(order);
         if (create) {
             order.setCreateUserId(userId);
             order.setCreateTime(now);
@@ -1194,6 +1199,21 @@ implements ErpSaleOrderService {
         if (warehouse != null) {
             order.setWarehouseName(warehouse.getWarehouseName());
         }
+    }
+
+    private void fillSalespersonSnapshot(ErpSaleOrderEntity order) {
+        if (order.getSalespersonId() == null) {
+            order.setSalespersonName(null);
+            return;
+        }
+        ErpSalespersonEntity salesperson = (ErpSalespersonEntity)this.erpSalespersonDao.selectById(order.getSalespersonId());
+        if (salesperson == null) {
+            throw new RuntimeException("销售信息不存在");
+        }
+        if (this.defaultFlag(salesperson.getStatus()) != 1) {
+            throw new RuntimeException("销售信息已停用");
+        }
+        order.setSalespersonName(salesperson.getSalesName());
     }
 
     private List<ErpSaleOrderItemEntity> buildFuturesItems(ErpSaleOrderEntity order) {
