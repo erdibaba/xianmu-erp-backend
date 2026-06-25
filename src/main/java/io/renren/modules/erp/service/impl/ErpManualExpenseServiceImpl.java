@@ -125,20 +125,7 @@ public class ErpManualExpenseServiceImpl extends ServiceImpl<ErpManualExpenseDao
   @Override
   @Transactional(rollbackFor = Exception.class)
   public void updateExpense(ErpManualExpenseEntity expense) {
-    if (expense == null || expense.getId() == null) {
-      throw new RRException("费用记录ID不能为空");
-    }
-    ErpManualExpenseEntity existing = this.getById(expense.getId());
-    if (existing == null) {
-      throw new RRException("费用记录不存在");
-    }
-    normalizeAndValidate(expense);
-    expense.setExpenseNo(existing.getExpenseNo());
-    expense.setCreateUserId(existing.getCreateUserId());
-    expense.setCreateTime(existing.getCreateTime());
-    expense.setAmount(money(expense.getAmount()));
-    expense.setUpdateTime(new Date());
-    this.updateById(expense);
+    throw new RRException("费用支出保存后不能修改");
   }
 
   @Override
@@ -193,12 +180,7 @@ public class ErpManualExpenseServiceImpl extends ServiceImpl<ErpManualExpenseDao
   @Override
   @Transactional(rollbackFor = Exception.class)
   public void deleteFile(Long fileId) {
-    ErpManualExpenseFileEntity file = fileId == null ? null : erpManualExpenseFileDao.selectById(fileId);
-    if (file == null) {
-      throw new RRException("附件不存在");
-    }
-    deletePhysicalFile(file.getFilePath());
-    erpManualExpenseFileDao.deleteById(fileId);
+    throw new RRException("费用支出保存后附件不能单独删除");
   }
 
   @Override
