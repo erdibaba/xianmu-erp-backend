@@ -31,6 +31,12 @@ public class ErpManualExpenseController extends AbstractController {
     return R.ok().put("page", page);
   }
 
+  @GetMapping("/types")
+  @RequiresPermissions("erp:manual-expense:list")
+  public R types() {
+    return R.ok().put("list", erpManualExpenseService.listExpenseTypes());
+  }
+
   @GetMapping("/info/{id}")
   @RequiresPermissions("erp:manual-expense:info")
   public R info(@PathVariable("id") Long id) {

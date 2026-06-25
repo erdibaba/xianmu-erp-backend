@@ -12,6 +12,8 @@ import org.springframework.web.multipart.MultipartFile;
 public interface ErpManualExpenseService extends IService<ErpManualExpenseEntity> {
   PageUtils queryPage(Map<String, Object> params);
 
+  List<String> listExpenseTypes();
+
   ErpManualExpenseEntity getDetail(Long id);
 
   void saveExpense(ErpManualExpenseEntity expense, Long userId);

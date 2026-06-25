@@ -21,9 +21,12 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +41,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service("erpManualExpenseService")
 public class ErpManualExpenseServiceImpl extends ServiceImpl<ErpManualExpenseDao, ErpManualExpenseEntity> implements ErpManualExpenseService {
   private static final String UPLOAD_BASE_DIR = "D:\\renren-fast-vue\\renren-fast\\uploads\\manual-expense";
+  private static final List<String> DEFAULT_EXPENSE_TYPES = Arrays.asList("仓库杂费", "运输费", "办公费", "人工费", "其他");
 
   @Autowired
   private ErpManualExpenseFileDao erpManualExpenseFileDao;
@@ -73,6 +77,25 @@ public class ErpManualExpenseServiceImpl extends ServiceImpl<ErpManualExpenseDao
       }
     }
     return new PageUtils(page);
+  }
+
+  @Override
+  public List<String> listExpenseTypes() {
+    Set<String> types = new LinkedHashSet<String>(DEFAULT_EXPENSE_TYPES);
+    List<Object> savedTypes = this.listObjs(new QueryWrapper<ErpManualExpenseEntity>()
+        .select("distinct expense_type")
+        .isNotNull("expense_type")
+        .ne("expense_type", "")
+        .orderByAsc("expense_type"));
+    if (savedTypes != null) {
+      for (Object value : savedTypes) {
+        String type = stringValue(value);
+        if (StringUtils.isNotBlank(type)) {
+          types.add(type);
+        }
+      }
+    }
+    return new ArrayList<String>(types);
   }
 
   @Override
