@@ -94,7 +94,7 @@ public class ErpWarehouseController extends AbstractController {
   @PostMapping("/rate/delete/{id}")
   @RequiresPermissions("erp:warehouse:update")
   public R rateDelete(@PathVariable("id") Long id) {
-    erpWarehouseFeeRateService.removeById(id);
+    erpWarehouseFeeRateService.deleteRate(id);
     return R.ok();
   }
 }

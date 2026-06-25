@@ -13,4 +13,6 @@ public interface ErpWarehouseFeeRateService extends IService<ErpWarehouseFeeRate
   void saveRate(ErpWarehouseFeeRateEntity rate, Long userId);
 
   void updateRate(ErpWarehouseFeeRateEntity rate);
+
+  void deleteRate(Long id);
 }

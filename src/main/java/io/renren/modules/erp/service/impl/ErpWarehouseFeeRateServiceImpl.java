@@ -3,12 +3,15 @@ package io.renren.modules.erp.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import io.renren.common.exception.RRException;
+import io.renren.modules.erp.dao.ErpWarehouseColorFeeTierDao;
 import io.renren.modules.erp.dao.ErpWarehouseFeeRateDao;
 import io.renren.modules.erp.entity.ErpWarehouseEntity;
+import io.renren.modules.erp.entity.ErpWarehouseColorFeeTierEntity;
 import io.renren.modules.erp.entity.ErpWarehouseFeeRateEntity;
 import io.renren.modules.erp.service.ErpWarehouseFeeRateService;
 import io.renren.modules.erp.service.ErpWarehouseService;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import org.apache.commons.lang.StringUtils;
@@ -19,13 +22,19 @@ import org.springframework.stereotype.Service;
 public class ErpWarehouseFeeRateServiceImpl extends ServiceImpl<ErpWarehouseFeeRateDao, ErpWarehouseFeeRateEntity> implements ErpWarehouseFeeRateService {
   @Autowired
   private ErpWarehouseService erpWarehouseService;
+  @Autowired
+  private ErpWarehouseColorFeeTierDao erpWarehouseColorFeeTierDao;
 
   @Override
   public List<ErpWarehouseFeeRateEntity> listByWarehouseId(Long warehouseId) {
-    return this.list(new QueryWrapper<ErpWarehouseFeeRateEntity>()
+    List<ErpWarehouseFeeRateEntity> rates = this.list(new QueryWrapper<ErpWarehouseFeeRateEntity>()
         .eq("warehouse_id", warehouseId)
         .orderByDesc("effective_date")
         .orderByDesc("id"));
+    for (ErpWarehouseFeeRateEntity rate : rates) {
+      rate.setColorFeeTierList(listColorFeeTiers(rate.getId()));
+    }
+    return rates;
   }
 
   @Override
@@ -48,6 +57,7 @@ public class ErpWarehouseFeeRateServiceImpl extends ServiceImpl<ErpWarehouseFeeR
     rate.setCreateTime(new Date());
     rate.setUpdateTime(new Date());
     this.save(rate);
+    saveColorFeeTiers(rate);
   }
 
   @Override
@@ -59,6 +69,16 @@ public class ErpWarehouseFeeRateServiceImpl extends ServiceImpl<ErpWarehouseFeeR
     fillWarehouseName(rate);
     rate.setUpdateTime(new Date());
     this.updateById(rate);
+    saveColorFeeTiers(rate);
+  }
+
+  @Override
+  public void deleteRate(Long id) {
+    if (id == null) {
+      return;
+    }
+    erpWarehouseColorFeeTierDao.delete(new QueryWrapper<ErpWarehouseColorFeeTierEntity>().eq("rate_id", id));
+    this.removeById(id);
   }
 
   private void validateRate(ErpWarehouseFeeRateEntity rate, Long excludeId) {
@@ -94,5 +114,46 @@ public class ErpWarehouseFeeRateServiceImpl extends ServiceImpl<ErpWarehouseFeeR
       throw new RRException("仓库不存在");
     }
     rate.setWarehouseName(warehouse.getWarehouseName());
+  }
+
+  private List<ErpWarehouseColorFeeTierEntity> listColorFeeTiers(Long rateId) {
+    if (rateId == null) {
+      return new ArrayList<ErpWarehouseColorFeeTierEntity>();
+    }
+    return erpWarehouseColorFeeTierDao.selectList(new QueryWrapper<ErpWarehouseColorFeeTierEntity>()
+        .eq("rate_id", rateId)
+        .orderByAsc("line_no")
+        .orderByAsc("id"));
+  }
+
+  private void saveColorFeeTiers(ErpWarehouseFeeRateEntity rate) {
+    if (rate.getId() == null) {
+      return;
+    }
+    erpWarehouseColorFeeTierDao.delete(new QueryWrapper<ErpWarehouseColorFeeTierEntity>().eq("rate_id", rate.getId()));
+    List<ErpWarehouseColorFeeTierEntity> tiers = rate.getColorFeeTierList();
+    if (tiers == null || tiers.isEmpty()) {
+      return;
+    }
+    Date now = new Date();
+    int lineNo = 1;
+    for (ErpWarehouseColorFeeTierEntity tier : tiers) {
+      if (tier == null || tier.getFeeAmount() == null) {
+        continue;
+      }
+      if (StringUtils.isBlank(tier.getRangeUnit())) {
+        tier.setRangeUnit("TON");
+      }
+      if (StringUtils.isBlank(tier.getFeeUnit())) {
+        tier.setFeeUnit(tier.getRangeUnit());
+      }
+      tier.setId(null);
+      tier.setRateId(rate.getId());
+      tier.setWarehouseId(rate.getWarehouseId());
+      tier.setLineNo(lineNo++);
+      tier.setCreateTime(now);
+      tier.setUpdateTime(now);
+      erpWarehouseColorFeeTierDao.insert(tier);
+    }
   }
 }
