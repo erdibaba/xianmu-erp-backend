@@ -328,7 +328,22 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   @Override
   @Transactional(rollbackFor = Exception.class)
-  public ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId, boolean overwriteExisting) throws Exception {
+  public ErpPresaleAttachmentEntity recognizeCustomsAttachment(MultipartFile file) throws Exception {
+    ErpRecognizeResultVo ocrResult = erpOcrService.recognize(file, "customs_declaration");
+    String rawText = ocrResult == null ? "" : StringUtils.defaultString(ocrResult.getRawText());
+    BigDecimal grossWeight = extractCustomsGrossWeight(rawText);
+    ErpPresaleAttachmentEntity attachment = new ErpPresaleAttachmentEntity();
+    attachment.setAttachmentType("CUSTOMS");
+    attachment.setFileName(file.getOriginalFilename());
+    attachment.setRawText(rawText);
+    attachment.setRecognizedGrossWeight(grossWeight);
+    attachment.setConfirmedGrossWeight(grossWeight);
+    return attachment;
+  }
+
+  @Override
+  @Transactional(rollbackFor = Exception.class)
+  public ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId, boolean overwriteExisting, BigDecimal confirmedGrossWeight) throws Exception {
     ErpPresaleOrderEntity order = this.getById(presaleOrderId);
     if (order == null) {
       throw new RuntimeException("预销售单不存在，无法上传附件");
@@ -384,7 +399,9 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
         BigDecimal grossWeight = extractCustomsGrossWeight(rawText);
         existing.setRawText(rawText);
         existing.setRecognizedGrossWeight(grossWeight);
-        existing.setConfirmedGrossWeight(grossWeight);
+        existing.setConfirmedGrossWeight(confirmedGrossWeight == null ? grossWeight : confirmedGrossWeight);
+      } else if ("CUSTOMS".equals(normalizedType) && confirmedGrossWeight != null) {
+        existing.setConfirmedGrossWeight(confirmedGrossWeight);
       }
       existing.setUpdateTime(now);
       if (existing.getId() == null) {

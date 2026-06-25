@@ -8,6 +8,7 @@ import io.renren.modules.erp.vo.ErpRecognizedOrderDraftVo;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
 import java.util.Map;
 
 public interface ErpPresaleOrderService {
@@ -29,7 +30,9 @@ public interface ErpPresaleOrderService {
 
   void syncPackingProductMaster(ErpRecognizedPackingDraftVo draft);
 
-  ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId, boolean overwriteExisting) throws Exception;
+  ErpPresaleAttachmentEntity recognizeCustomsAttachment(MultipartFile file) throws Exception;
+
+  ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId, boolean overwriteExisting, BigDecimal confirmedGrossWeight) throws Exception;
 
   ResponseEntity<byte[]> downloadEstimateFile(Long id);
 

@@ -8,6 +8,7 @@ import io.renren.modules.erp.service.ErpPresaleOrderService;
 import io.renren.modules.erp.vo.ErpRecognizedPackingDraftVo;
 import io.renren.modules.erp.vo.ErpRecognizedOrderDraftVo;
 import io.renren.modules.sys.controller.AbstractController;
+import java.math.BigDecimal;
 import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
@@ -84,6 +85,7 @@ public class ErpPresaleOrderController extends AbstractController {
                             @RequestParam(value = "confirmId", required = false) Long confirmId,
                             @RequestParam("attachmentType") String attachmentType,
                             @RequestParam(value = "overwriteExisting", required = false, defaultValue = "false") Boolean overwriteExisting,
+                            @RequestParam(value = "confirmedGrossWeight", required = false) BigDecimal confirmedGrossWeight,
                             @RequestParam("file") MultipartFile file) throws Exception {
     if (presaleOrderId == null || presaleOrderId <= 0) {
       return R.error("请先保存预销售单后再上传附件");
@@ -95,8 +97,17 @@ public class ErpPresaleOrderController extends AbstractController {
     if (!"CUSTOMS".equals(normalizedType) && !"QUARANTINE".equals(normalizedType)) {
       return R.error("附件类型不支持");
     }
-    ErpPresaleAttachmentEntity attachment = erpPresaleOrderService.uploadAttachment(presaleOrderId, confirmId, normalizedType, file, getUserId(), Boolean.TRUE.equals(overwriteExisting));
+    ErpPresaleAttachmentEntity attachment = erpPresaleOrderService.uploadAttachment(presaleOrderId, confirmId, normalizedType, file, getUserId(), Boolean.TRUE.equals(overwriteExisting), confirmedGrossWeight);
     return R.ok().put("attachment", attachment);
+  }
+
+  @PostMapping("/recognize-customs")
+  @RequiresPermissions("erp:tradeorder:save")
+  public R recognizeCustoms(@RequestParam("file") MultipartFile file) throws Exception {
+    if (file == null || file.isEmpty()) {
+      return R.error("请先上传报关单文件");
+    }
+    return R.ok().put("attachment", erpPresaleOrderService.recognizeCustomsAttachment(file));
   }
 
   @GetMapping("/download/estimate/{id}")
