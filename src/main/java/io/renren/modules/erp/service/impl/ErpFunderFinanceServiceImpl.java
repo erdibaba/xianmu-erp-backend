@@ -1159,7 +1159,11 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     BigDecimal gross = money(settlement.getGrossWeightFeeAmount());
     BigDecimal other = money(settlement.getOtherFeeAmount());
     BigDecimal expected = BigDecimal.ZERO;
+    boolean includeCodeScanFee = Integer.valueOf(1).equals(settlement.getIncludeCodeScanFee());
     for (ErpFunderBatchSettlementItemEntity item : settlement.getItemList()) {
+      if (!includeCodeScanFee) {
+        item.setCodeScanFeeAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+      }
       item.setExpectedPaymentAmount(calcItemExpectedPayment(item));
       systemPrincipal = systemPrincipal.add(money(item.getSystemPrincipalAmount()));
       confirmedPrincipal = confirmedPrincipal.add(money(item.getConfirmedPrincipalAmount()));
