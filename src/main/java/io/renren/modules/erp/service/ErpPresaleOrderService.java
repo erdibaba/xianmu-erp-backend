@@ -29,7 +29,7 @@ public interface ErpPresaleOrderService {
 
   void syncPackingProductMaster(ErpRecognizedPackingDraftVo draft);
 
-  ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId) throws Exception;
+  ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId, boolean overwriteExisting) throws Exception;
 
   ResponseEntity<byte[]> downloadEstimateFile(Long id);
 

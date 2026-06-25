@@ -328,7 +328,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   @Override
   @Transactional(rollbackFor = Exception.class)
-  public ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId) throws Exception {
+  public ErpPresaleAttachmentEntity uploadAttachment(Long presaleOrderId, Long confirmId, String attachmentType, MultipartFile file, Long userId, boolean overwriteExisting) throws Exception {
     ErpPresaleOrderEntity order = this.getById(presaleOrderId);
     if (order == null) {
       throw new RuntimeException("预销售单不存在，无法上传附件");
@@ -355,6 +355,16 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
         } catch (Exception ignored) {
           ocrResult = null;
         }
+      }
+      if (overwriteExisting && "QUARANTINE".equals(normalizedType)) {
+        QueryWrapper<ErpPresaleAttachmentEntity> deleteWrapper = new QueryWrapper<ErpPresaleAttachmentEntity>()
+            .eq("attachment_type", normalizedType);
+        if (confirmId != null) {
+          deleteWrapper.eq("confirm_id", confirmId);
+        } else {
+          deleteWrapper.eq("presale_order_id", presaleOrderId);
+        }
+        erpPresaleAttachmentDao.delete(deleteWrapper);
       }
       ErpPresaleAttachmentEntity existing = "QUARANTINE".equals(normalizedType) ? null : findAttachment(presaleOrderId, confirmId, normalizedType);
       Date now = new Date();
