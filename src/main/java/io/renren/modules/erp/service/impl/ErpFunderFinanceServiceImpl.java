@@ -1005,20 +1005,27 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (customsGrossWeight.compareTo(BigDecimal.ZERO) <= 0) {
       throw new RuntimeException("报关单未维护确认毛重，不能计算毛重费用：" + item.getConfirmContractNo());
     }
-    if (confirmPacking.totalBoxes <= 0 || confirmPacking.totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
-      throw new RuntimeException("装箱单总箱数/总重量为空，不能计算毛重费用：" + item.getConfirmContractNo());
+    if (confirmPacking.totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("装箱单整单总重量为空，不能计算毛重费用：" + item.getConfirmContractNo());
     }
-    BigDecimal totalDiff = decimal3(customsGrossWeight.subtract(confirmPacking.totalWeight));
-    BigDecimal diffPerBox = totalDiff.divide(new BigDecimal(confirmPacking.totalBoxes), 6, RoundingMode.HALF_UP);
-    BigDecimal currentDiff = decimal3(diffPerBox.multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
+    BigDecimal productNetWeight = decimal3(item.getPackingTotalWeight());
+    int productBoxes = item.getPackingTotalBoxes() == null ? 0 : item.getPackingTotalBoxes();
+    if (productBoxes <= 0 || productNetWeight.compareTo(BigDecimal.ZERO) <= 0) {
+      throw new RuntimeException("装箱单产品总重量/总箱数为空，不能计算毛重费用：" + item.getProductCode());
+    }
+    BigDecimal productGrossWeight = productNetWeight
+        .divide(confirmPacking.totalWeight, 10, RoundingMode.HALF_UP)
+        .multiply(customsGrossWeight);
+    BigDecimal grossPerBox = productGrossWeight.divide(new BigDecimal(productBoxes), 6, RoundingMode.HALF_UP);
+    BigDecimal currentGrossWeight = decimal3(grossPerBox.multiply(new BigDecimal(item.getShippedBoxes() == null ? 0 : item.getShippedBoxes())));
     boolean frozen = isFrozen(confirm == null ? null : confirm.getColdFreshType());
     BigDecimal rate = frozen ? new BigDecimal("2.10") : new BigDecimal("2.80");
     int days = calcGrossFeeDays(saleItem == null ? null : saleItem.getInboundDate(), settlementDate, frozen);
-    BigDecimal fee = currentDiff.divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP)
+    BigDecimal fee = currentGrossWeight.divide(new BigDecimal("1000"), 8, RoundingMode.HALF_UP)
         .multiply(rate)
         .multiply(new BigDecimal(days));
     item.setCustomsGrossWeight(decimal3(customsGrossWeight));
-    item.setGrossDiffWeight(currentDiff);
+    item.setGrossDiffWeight(currentGrossWeight);
     item.setGrossFeeDays(days);
     item.setGrossFeeRate(rate);
     return money(fee);
