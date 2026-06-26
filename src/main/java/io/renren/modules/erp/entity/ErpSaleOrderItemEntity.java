@@ -22,6 +22,7 @@ public class ErpSaleOrderItemEntity implements Serializable {
   private String productCode;
   private String productName;
   private String productNameEn;
+  private String marketCirculationName;
   private String productSpec;
   private String unit;
   private Integer boxes;

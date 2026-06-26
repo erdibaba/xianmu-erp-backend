@@ -105,14 +105,19 @@ try {
     $productCell = $sheet.Cells.Item($rowIndex, 5)
     $productCell.WrapText = $true
     $productCell.ShrinkToFit = $false
+    $portColdCell = $sheet.Cells.Item($rowIndex, 12)
+    $portColdCell.WrapText = $true
+    $portColdCell.ShrinkToFit = $false
     $sheet.Rows.Item($rowIndex).VerticalAlignment = -4160
     $sheet.Rows.Item($rowIndex).AutoFit() | Out-Null
 
     $contractLength = Get-VisualTextLength([string]$row.contractNo)
     $productLength = Get-VisualTextLength([string]$row.productName)
+    $portColdLength = Get-VisualTextLength([string]$row.portCold)
     $contractLineCount = [math]::Max(1, [math]::Ceiling($contractLength / 8.0))
     $productLineCount = [math]::Max(1, [math]::Ceiling($productLength / 13.0))
-    $lineCount = [math]::Max($contractLineCount, $productLineCount)
+    $portColdLineCount = [math]::Max(1, [math]::Ceiling($portColdLength / 10.0))
+    $lineCount = [math]::Max([math]::Max($contractLineCount, $productLineCount), $portColdLineCount)
     $targetHeight = [math]::Max(24, $lineCount * 18)
     if ($sheet.Rows.Item($rowIndex).RowHeight -lt $targetHeight) {
       $sheet.Rows.Item($rowIndex).RowHeight = $targetHeight

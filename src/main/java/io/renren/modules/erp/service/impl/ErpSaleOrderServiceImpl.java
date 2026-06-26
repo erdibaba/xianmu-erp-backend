@@ -593,6 +593,7 @@ implements ErpSaleOrderService {
             plan.setProductCode(saleItem.getProductCode());
             plan.setProductName(saleItem.getProductName());
             plan.setProductNameEn(saleItem.getProductNameEn());
+            plan.setMarketCirculationName(saleItem.getMarketCirculationName());
             plan.setContainerNo(saleItem.getSourceContainerNo());
             plan.setFactoryNo(saleItem.getContractFactoryNo());
             plan.setPlannedBoxes(plannedBoxes);
@@ -920,7 +921,7 @@ implements ErpSaleOrderService {
         html.append("<div class='meta'>类型：").append(SALE_TYPE_SPOT.equals(order.getSaleType()) ? "现货单" : "期货单").append("</div>");
         html.append("<div class='meta'>二批商：").append(this.escapeHtml(order.getSecondaryPartnerName())).append("</div>");
         html.append("<div class='meta'>仓库：").append(this.escapeHtml(StringUtils.defaultString((String)order.getWarehouseName(), (String)"-"))).append("</div>");
-        html.append("<div class='table-wrap'><table><thead><tr><th>序号</th><th>合同号</th><th>产品编码</th><th>中文名称</th><th>英文名称</th><th>柜号</th><th>厂号</th><th>箱数</th><th>数量/千克</th><th>销售价（元/千克）</th><th>货款金额</th><th>税款金额</th><th>金额（元）</th></tr></thead><tbody>");
+        html.append("<div class='table-wrap'><table><thead><tr><th>序号</th><th>合同号</th><th>产品编码</th><th>货物名称</th><th>柜号</th><th>厂号</th><th>箱数</th><th>数量/千克</th><th>销售价（元/千克）</th><th>货款金额</th><th>税款金额</th><th>金额（元）</th></tr></thead><tbody>");
         int index = 1;
         for (ErpSaleOrderItemEntity item : displayItems) {
             BigDecimal quantityKg = this.defaultDecimal(item.getContractQuantityKg());
@@ -928,7 +929,7 @@ implements ErpSaleOrderService {
             BigDecimal totalAmount = quantityKg.multiply(salePriceKg).setScale(2, RoundingMode.HALF_UP);
             BigDecimal goodsAmount = totalAmount.divide(new BigDecimal("1.09"), 2, RoundingMode.HALF_UP);
             BigDecimal taxAmount = goodsAmount.multiply(new BigDecimal("0.09")).setScale(2, RoundingMode.HALF_UP);
-            html.append("<tr>").append("<td>").append(index++).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(order.getContractNo(), order.getOrderNo(), "-"))).append("</td>").append("<td>").append(this.escapeHtml(item.getProductCode())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductName())).append("</td>").append("<td>").append(this.escapeHtml(item.getProductNameEn())).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getSourceContainerNo(), "-"))).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getContractFactoryNo(), "-"))).append("</td>").append("<td class='num'>").append(this.defaultInt(item.getBoxes())).append("</td>").append("<td class='num'>").append(this.formatDecimal(quantityKg)).append("</td>").append("<td class='num'>").append(this.formatDecimal(salePriceKg)).append("</td>").append("<td class='num'>").append(this.formatDecimal(goodsAmount)).append("</td>").append("<td class='num'>").append(this.formatDecimal(taxAmount)).append("</td>").append("<td class='num'>").append(this.formatDecimal(totalAmount)).append("</td>").append("</tr>");
+            html.append("<tr>").append("<td>").append(index++).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(order.getContractNo(), order.getOrderNo(), "-"))).append("</td>").append("<td>").append(this.escapeHtml(item.getProductCode())).append("</td>").append("<td>").append(this.escapeHtml(this.contractProductName(item))).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getSourceContainerNo(), "-"))).append("</td>").append("<td>").append(this.escapeHtml(this.firstNonBlank(item.getContractFactoryNo(), "-"))).append("</td>").append("<td class='num'>").append(this.defaultInt(item.getBoxes())).append("</td>").append("<td class='num'>").append(this.formatDecimal(quantityKg)).append("</td>").append("<td class='num'>").append(this.formatDecimal(salePriceKg)).append("</td>").append("<td class='num'>").append(this.formatDecimal(goodsAmount)).append("</td>").append("<td class='num'>").append(this.formatDecimal(taxAmount)).append("</td>").append("<td class='num'>").append(this.formatDecimal(totalAmount)).append("</td>").append("</tr>");
         }
         html.append("</tbody></table></div>");
         html.append("<div style='margin-top:24px;'>请先下载PDF合同并盖章，回传后由内部继续处理出库批次和来款水单。</div>");
@@ -1046,7 +1047,7 @@ implements ErpSaleOrderService {
             row.put("factoryNo", StringUtils.trimToEmpty((String)item.getContractFactoryNo()));
             row.put("containerNo", SALE_TYPE_SPOT.equals(order.getSaleType()) ? this.firstNonBlank(item.getSourceContainerNo(), "") : "");
             row.put("productCode", this.firstNonBlank(item.getProductCode(), ""));
-            row.put("productName", this.firstNonBlank(item.getProductName(), item.getProductNameEn(), "-"));
+            row.put("productName", this.contractProductName(item));
             row.put("boxes", item.getBoxes());
             row.put("quantityKg", item.getContractQuantityKg().setScale(2, RoundingMode.HALF_UP));
             row.put("salePriceKg", item.getSalePriceKg().setScale(2, RoundingMode.HALF_UP));
@@ -1056,6 +1057,28 @@ implements ErpSaleOrderService {
             rowNo++;
         }
         return rows;
+    }
+
+    private String contractProductName(ErpSaleOrderItemEntity item) {
+        if (item == null) {
+            return "-";
+        }
+        String code = this.firstNonBlank(item.getProductCode(), "");
+        String name = this.displayProductName(item);
+        if (StringUtils.isBlank((String)code)) {
+            return this.firstNonBlank(name, "-");
+        }
+        if (StringUtils.isBlank((String)name)) {
+            return code;
+        }
+        return code + " " + name;
+    }
+
+    private String displayProductName(ErpSaleOrderItemEntity item) {
+        if (item == null) {
+            return "";
+        }
+        return this.firstNonBlank(item.getMarketCirculationName(), item.getProductName(), item.getProductNameEn(), "");
     }
 
     private int resolveColdStorageFreeDays(ErpSaleOrderEntity order) {
@@ -1269,6 +1292,7 @@ implements ErpSaleOrderService {
             saved.setProductCode(product.getProductCode());
             saved.setProductName(product.getProductName());
             saved.setProductNameEn(product.getProductNameEn());
+            saved.setMarketCirculationName(product.getMarketCirculationName());
             saved.setProductSpec(product.getProductSpec());
             saved.setUnit(product.getUnit());
             saved.setBoxes(item.getBoxes());
@@ -1320,6 +1344,7 @@ implements ErpSaleOrderService {
                 allocated.setProductCode(candidate.product.getProductCode());
                 allocated.setProductName(candidate.product.getProductName());
                 allocated.setProductNameEn(candidate.product.getProductNameEn());
+                allocated.setMarketCirculationName(candidate.product.getMarketCirculationName());
                 allocated.setProductSpec(candidate.product.getProductSpec());
                 allocated.setUnit(candidate.product.getUnit());
                 allocated.setBoxes(allocate);
@@ -2766,6 +2791,7 @@ implements ErpSaleOrderService {
         } else {
             item.setExpectedFactoryNo(plan.getFactoryNo());
             item.setExpectedContainerNo(plan.getContainerNo());
+            item.setMarketCirculationName(plan.getMarketCirculationName());
             item.setExpectedBoxes(this.defaultInt(plan.getPlannedBoxes()));
             item.setExpectedWeight(this.defaultDecimal(plan.getPlannedWeight()).setScale(3, RoundingMode.HALF_UP));
             item.setSalePriceKg(this.defaultDecimal(plan.getSalePriceKg()).setScale(2, RoundingMode.HALF_UP));
@@ -2796,6 +2822,7 @@ implements ErpSaleOrderService {
                 summary.setProductCode(saleItem.getProductCode());
                 summary.setProductName(saleItem.getProductName());
                 summary.setProductNameEn(saleItem.getProductNameEn());
+                summary.setMarketCirculationName(saleItem.getMarketCirculationName());
                 summary.setExpectedBoxes(0);
                 summary.setExpectedWeight(BigDecimal.ZERO);
                 summary.setShippedQty(0);
@@ -2822,6 +2849,7 @@ implements ErpSaleOrderService {
                 summary.setProductCode(outboundItem.getProductCode());
                 summary.setProductName(outboundItem.getProductName());
                 summary.setProductNameEn(outboundItem.getProductNameEn());
+                summary.setMarketCirculationName(outboundItem.getMarketCirculationName());
                 summary.setExpectedBoxes(0);
                 summary.setExpectedWeight(BigDecimal.ZERO);
                 summary.setShippedQty(0);
@@ -2893,6 +2921,7 @@ implements ErpSaleOrderService {
             item.setProductCode(product.getProductCode());
             item.setProductName(product.getProductName());
             item.setProductNameEn(product.getProductNameEn());
+            item.setMarketCirculationName(product.getMarketCirculationName());
             if (StringUtils.isBlank((String)item.getProductSpec())) {
                 item.setProductSpec(product.getProductSpec());
             }
@@ -3080,6 +3109,7 @@ implements ErpSaleOrderService {
                 groupedItem.setProductCode(item.getProductCode());
                 groupedItem.setProductName(item.getProductName());
                 groupedItem.setProductNameEn(item.getProductNameEn());
+                groupedItem.setMarketCirculationName(item.getMarketCirculationName());
                 groupedItem.setProductSpec(item.getProductSpec());
                 groupedItem.setUnit(item.getUnit());
                 groupedItem.setBoxes(0);

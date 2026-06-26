@@ -24,6 +24,7 @@ public class ErpSaleOutboundPlanItemEntity implements Serializable {
   private String productCode;
   private String productName;
   private String productNameEn;
+  private String marketCirculationName;
   private String containerNo;
   private String factoryNo;
   private Integer plannedBoxes;

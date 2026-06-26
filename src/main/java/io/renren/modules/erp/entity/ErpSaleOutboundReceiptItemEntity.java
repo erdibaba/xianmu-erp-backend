@@ -41,6 +41,8 @@ public class ErpSaleOutboundReceiptItemEntity implements Serializable {
   private Date updateTime;
 
   @TableField(exist = false)
+  private String marketCirculationName;
+  @TableField(exist = false)
   private String contractNo;
   @TableField(exist = false)
   private String expectedFactoryNo;
