@@ -33,6 +33,9 @@ public class ErpPartnerEntity implements Serializable {
   private String wecomChatId;
   private String wecomChatName;
   private String wecomChatOwner;
+  private String riskLevel;
+  private String riskRemark;
+  private Date riskMarkDate;
   private String remark;
   private Integer status;
   private Long createUserId;

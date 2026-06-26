@@ -40,6 +40,7 @@ public class ErpPartnerController extends AbstractController {
   @RequiresPermissions("erp:partner:save")
   public R save(@RequestBody ErpPartnerEntity partner) {
     normalizeColdStorageFreeDays(partner);
+    normalizeRiskLevel(partner);
     partner.setCreateUserId(getUserId());
     partner.setCreateTime(new Date());
     partner.setUpdateTime(new Date());
@@ -51,6 +52,7 @@ public class ErpPartnerController extends AbstractController {
   @RequiresPermissions("erp:partner:update")
   public R update(@RequestBody ErpPartnerEntity partner) {
     normalizeColdStorageFreeDays(partner);
+    normalizeRiskLevel(partner);
     partner.setUpdateTime(new Date());
     erpPartnerService.updateById(partner);
     return R.ok();
@@ -66,6 +68,18 @@ public class ErpPartnerController extends AbstractController {
   private void normalizeColdStorageFreeDays(ErpPartnerEntity partner) {
     if (partner.getColdStorageFreeDays() == null || partner.getColdStorageFreeDays() <= 0) {
       partner.setColdStorageFreeDays(7);
+    }
+  }
+
+  private void normalizeRiskLevel(ErpPartnerEntity partner) {
+    if (partner.getRiskLevel() == null || partner.getRiskLevel().trim().isEmpty()) {
+      partner.setRiskLevel("NORMAL");
+    }
+    if ("NORMAL".equals(partner.getRiskLevel())) {
+      partner.setRiskRemark(null);
+      partner.setRiskMarkDate(null);
+    } else if (partner.getRiskMarkDate() == null) {
+      partner.setRiskMarkDate(new Date());
     }
   }
 }
