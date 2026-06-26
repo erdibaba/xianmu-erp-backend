@@ -367,6 +367,7 @@
             pack.factory_no AS factoryNo,
             i.sku_code AS skuCode,
             pc.cold_fresh_type AS temperatureZone,
+            io.order_date AS inboundDate,
             i.production_date AS productionDate,
             i.expiry_date AS expiryDate,
             COALESCE(i.actual_qty, 0) AS batchBoxes,
