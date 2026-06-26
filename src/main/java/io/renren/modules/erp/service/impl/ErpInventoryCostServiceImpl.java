@@ -1,14 +1,22 @@
 package io.renren.modules.erp.service.impl;
 
 import io.renren.modules.erp.dao.ErpInventoryDao;
+import io.renren.modules.erp.entity.ErpWarehouseFeeRateEntity;
 import io.renren.modules.erp.service.ErpInventoryCostService;
+import io.renren.modules.erp.service.ErpWarehouseFeeRateService;
 import io.renren.modules.erp.vo.ErpInventoryBatchVo;
 import io.renren.modules.erp.vo.ErpInventoryCostDetailVo;
 import io.renren.modules.erp.vo.ErpInventoryCostVo;
 import io.renren.modules.erp.vo.ErpSpotInventoryVo;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,12 +29,18 @@ import org.springframework.stereotype.Service;
 @Service("erpInventoryCostService")
 public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
   private static final BigDecimal ZERO = BigDecimal.ZERO;
+  private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+  private static final BigDecimal DAYS_PER_YEAR = new BigDecimal("365");
+  private static final BigDecimal KG_PER_TON = new BigDecimal("1000");
 
   @Autowired
   private ErpInventoryDao erpInventoryDao;
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
+
+  @Autowired
+  private ErpWarehouseFeeRateService erpWarehouseFeeRateService;
 
   @Override
   public List<ErpInventoryCostVo> querySpotCost(Map<String, Object> params) {
@@ -58,6 +72,7 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
     Map<String, BigDecimal> contractTotalWeight = buildContractTotalWeight();
     Map<String, List<CostComponent>> costComponents = loadCostComponents(contractTotalWeight.keySet());
     Map<Long, BigDecimal> purchaseUnitPriceCache = new HashMap<Long, BigDecimal>();
+    Map<Long, List<ErpWarehouseFeeRateEntity>> warehouseRateCache = new HashMap<Long, List<ErpWarehouseFeeRateEntity>>();
     CostContext context = new CostContext();
 
     for (ErpSpotInventoryVo row : visibleRows) {
@@ -87,6 +102,16 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
               batch.getContainerNo(), batch.getFactoryNo(), batch.getProductionDate(), batch.getExpiryDate(),
               batch.getAvailableBoxes(), purchaseAmount, purchaseAmount, availableWeight,
               availableWeight, "采购单价按确认函产品行带出，金额按当前剩余重量计算"));
+        }
+
+        StorageCost storageCost = calcDynamicStorageCost(batch, availableWeight, warehouseRateCache);
+        if (storageCost.amount.compareTo(ZERO) > 0) {
+          accumulator.detailCount++;
+          accumulator.allocatedFeeAmount = accumulator.allocatedFeeAmount.add(storageCost.amount);
+          context.details.add(detail("仓储费用", "动态仓储费", batch.getWarehouseName(), batch.getContractNo(),
+              batch.getContainerNo(), batch.getFactoryNo(), batch.getProductionDate(), batch.getExpiryDate(),
+              batch.getAvailableBoxes(), storageCost.amount, storageCost.amount, availableWeight,
+              availableWeight, storageCost.remark));
         }
 
         List<CostComponent> components = costComponents.get(StringUtils.defaultString(batch.getContractNo()));
@@ -201,13 +226,20 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
   }
 
   private void loadFunderLoanComponents(Map<String, List<CostComponent>> result, String placeholders, Object[] args) {
-    String loanSql = "SELECT confirm_contract_no, loan_no, interest_amount "
+    String loanSql = "SELECT confirm_contract_no, loan_no, loan_amount, repaid_principal, remaining_principal, "
+        + "annual_interest_rate, loan_date, interest_amount "
         + "FROM erp_funder_loan WHERE confirm_contract_no IN (" + placeholders + ") "
-        + "AND COALESCE(interest_amount, 0) <> 0";
+        + "AND (COALESCE(loan_amount, 0) <> 0 OR COALESCE(interest_amount, 0) <> 0)";
     for (Map<String, Object> row : jdbcTemplate.queryForList(loanSql, args)) {
+      BigDecimal dynamicInterest = calcDynamicLoanInterest(row);
+      BigDecimal recordedInterest = decimal(row.get("interest_amount"));
+      BigDecimal amount = dynamicInterest.max(recordedInterest);
+      if (amount.compareTo(ZERO) == 0) {
+        continue;
+      }
+      String remark = "按贷款剩余本金、年利率、贷款日期到今天动态估算；若已登记利息更高，则按已登记利息计入";
       addComponent(result, string(row.get("confirm_contract_no")), new CostComponent(
-          "资金成本", "资方贷款利息", string(row.get("loan_no")), decimal(row.get("interest_amount")),
-          "按资方贷款明细已计算利息分摊"));
+          "资金成本", "资方贷款动态利息", string(row.get("loan_no")), amount, remark));
     }
 
     String repaySql = "SELECT l.confirm_contract_no, r.repayment_no, r.handling_fee_amount "
@@ -218,6 +250,134 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
           "资金成本", "资方还款手续费", string(row.get("repayment_no")), decimal(row.get("handling_fee_amount")),
           "按还款记录手续费分摊"));
     }
+  }
+
+  private BigDecimal calcDynamicLoanInterest(Map<String, Object> row) {
+    BigDecimal annualRate = decimal(row.get("annual_interest_rate"));
+    if (annualRate.compareTo(ZERO) <= 0) {
+      return ZERO;
+    }
+    Date loanDate = date(row.get("loan_date"));
+    LocalDate start = toLocalDate(loanDate);
+    LocalDate today = LocalDate.now();
+    if (start == null || today.isBefore(start)) {
+      return ZERO;
+    }
+    BigDecimal loanAmount = decimal(row.get("loan_amount"));
+    BigDecimal repaidPrincipal = decimal(row.get("repaid_principal"));
+    BigDecimal remainingPrincipal = decimal(row.get("remaining_principal"));
+    BigDecimal principal = remainingPrincipal.compareTo(ZERO) > 0
+        ? remainingPrincipal : loanAmount.subtract(repaidPrincipal).max(ZERO);
+    if (principal.compareTo(ZERO) <= 0) {
+      return ZERO;
+    }
+    long days = ChronoUnit.DAYS.between(start, today) + 1;
+    if (days <= 0) {
+      return ZERO;
+    }
+    return principal.multiply(annualRate)
+        .divide(ONE_HUNDRED, 16, RoundingMode.HALF_UP)
+        .divide(DAYS_PER_YEAR, 16, RoundingMode.HALF_UP)
+        .multiply(BigDecimal.valueOf(days))
+        .setScale(10, RoundingMode.HALF_UP);
+  }
+
+  private StorageCost calcDynamicStorageCost(ErpInventoryBatchVo batch, BigDecimal availableWeight,
+                                             Map<Long, List<ErpWarehouseFeeRateEntity>> warehouseRateCache) {
+    if (batch == null || batch.getWarehouseId() == null || availableWeight.compareTo(ZERO) <= 0) {
+      return StorageCost.zero();
+    }
+    LocalDate start = toLocalDate(batch.getInboundDate());
+    LocalDate today = LocalDate.now();
+    if (start == null || today.isBefore(start)) {
+      return StorageCost.zero();
+    }
+    List<ErpWarehouseFeeRateEntity> rates = cachedWarehouseRates(batch.getWarehouseId(), warehouseRateCache);
+    if (rates.isEmpty()) {
+      return StorageCost.zero();
+    }
+    BigDecimal weightTon = availableWeight.divide(KG_PER_TON, 10, RoundingMode.HALF_UP);
+    BigDecimal amount = ZERO;
+    BigDecimal rateTotal = ZERO;
+    int chargeDays = 0;
+    LocalDate cursor = start;
+    while (!cursor.isAfter(today)) {
+      ErpWarehouseFeeRateEntity rate = effectiveRate(rates, cursor);
+      if (rate != null) {
+        BigDecimal dailyRate = storageRate(rate, batch.getTemperatureZone());
+        amount = amount.add(weightTon.multiply(dailyRate));
+        rateTotal = rateTotal.add(dailyRate);
+        chargeDays++;
+      }
+      cursor = cursor.plusDays(1);
+    }
+    if (chargeDays <= 0 || amount.compareTo(ZERO) == 0) {
+      return StorageCost.zero();
+    }
+    BigDecimal averageRate = rateTotal.divide(BigDecimal.valueOf(chargeDays), 6, RoundingMode.HALF_UP);
+    String remark = "按当前剩余重量、入库日期到今天、仓库费率历史逐日计算；计费天数"
+        + chargeDays + "天，平均费率" + price(averageRate) + "元/吨/天";
+    return new StorageCost(money(amount), chargeDays, averageRate, remark);
+  }
+
+  private List<ErpWarehouseFeeRateEntity> cachedWarehouseRates(Long warehouseId,
+                                                               Map<Long, List<ErpWarehouseFeeRateEntity>> cache) {
+    if (warehouseId == null) {
+      return new ArrayList<ErpWarehouseFeeRateEntity>();
+    }
+    if (cache.containsKey(warehouseId)) {
+      return cache.get(warehouseId);
+    }
+    List<ErpWarehouseFeeRateEntity> rates = erpWarehouseFeeRateService.listByWarehouseId(warehouseId);
+    if (rates == null) {
+      rates = new ArrayList<ErpWarehouseFeeRateEntity>();
+    }
+    List<ErpWarehouseFeeRateEntity> enabled = new ArrayList<ErpWarehouseFeeRateEntity>();
+    for (ErpWarehouseFeeRateEntity rate : rates) {
+      if (rate != null && (rate.getStatus() == null || rate.getStatus() == 1) && rate.getEffectiveDate() != null) {
+        enabled.add(rate);
+      }
+    }
+    Collections.sort(enabled, new Comparator<ErpWarehouseFeeRateEntity>() {
+      @Override
+      public int compare(ErpWarehouseFeeRateEntity left, ErpWarehouseFeeRateEntity right) {
+        int dateCompare = left.getEffectiveDate().compareTo(right.getEffectiveDate());
+        if (dateCompare != 0) {
+          return dateCompare;
+        }
+        Long leftId = left.getId() == null ? 0L : left.getId();
+        Long rightId = right.getId() == null ? 0L : right.getId();
+        return leftId.compareTo(rightId);
+      }
+    });
+    cache.put(warehouseId, enabled);
+    return enabled;
+  }
+
+  private ErpWarehouseFeeRateEntity effectiveRate(List<ErpWarehouseFeeRateEntity> rates, LocalDate businessDate) {
+    ErpWarehouseFeeRateEntity matched = null;
+    for (ErpWarehouseFeeRateEntity rate : rates) {
+      LocalDate effectiveDate = toLocalDate(rate.getEffectiveDate());
+      if (effectiveDate != null && !effectiveDate.isAfter(businessDate)) {
+        matched = rate;
+      }
+      if (effectiveDate != null && effectiveDate.isAfter(businessDate)) {
+        break;
+      }
+    }
+    return matched;
+  }
+
+  private BigDecimal storageRate(ErpWarehouseFeeRateEntity rate, String temperatureZone) {
+    if (rate == null) {
+      return ZERO;
+    }
+    return isFrozen(temperatureZone) ? decimal(rate.getFrozenStorageFee()) : decimal(rate.getChilledStorageFee());
+  }
+
+  private boolean isFrozen(String value) {
+    String text = StringUtils.defaultString(value).toUpperCase();
+    return text.contains("冻") || text.contains("FROZEN");
   }
 
   private BigDecimal getPurchaseUnitPrice(Long inboundItemId, Map<Long, BigDecimal> cache) {
@@ -356,6 +516,15 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
     return value == null ? "" : value.toString();
   }
 
+  private Date date(Object value) {
+    return value instanceof Date ? (Date) value : null;
+  }
+
+  private LocalDate toLocalDate(Date value) {
+    return value == null ? null
+        : java.time.Instant.ofEpochMilli(value.getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
+  }
+
   private BigDecimal decimal(Object value) {
     if (value == null) {
       return ZERO;
@@ -401,6 +570,24 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
 
     private RowAccumulator(ErpInventoryCostVo row) {
       this.row = row;
+    }
+  }
+
+  private static class StorageCost {
+    private BigDecimal amount;
+    private int chargeDays;
+    private BigDecimal averageRate;
+    private String remark;
+
+    private StorageCost(BigDecimal amount, int chargeDays, BigDecimal averageRate, String remark) {
+      this.amount = amount == null ? BigDecimal.ZERO : amount;
+      this.chargeDays = chargeDays;
+      this.averageRate = averageRate == null ? BigDecimal.ZERO : averageRate;
+      this.remark = remark;
+    }
+
+    private static StorageCost zero() {
+      return new StorageCost(BigDecimal.ZERO, 0, BigDecimal.ZERO, "");
     }
   }
 

@@ -33,6 +33,7 @@ public class ErpInventoryBatchVo implements Serializable {
   private String skuCode;
   private String temperatureZone;
   private Date expectedArrivalDate;
+  private Date inboundDate;
   private Date productionDate;
   private Date expiryDate;
   private Integer boxes;
