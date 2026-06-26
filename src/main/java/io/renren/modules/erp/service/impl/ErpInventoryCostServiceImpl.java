@@ -83,8 +83,9 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
         accumulator.purchaseAmount = accumulator.purchaseAmount.add(purchaseAmount);
         if (purchaseAmount.compareTo(ZERO) > 0) {
           accumulator.detailCount++;
-          context.details.add(detail("采购成本", "订单确认函采购价", batch.getContractNo(), batch.getContractNo(),
-              batch.getContainerNo(), batch.getFactoryNo(), purchaseAmount, purchaseAmount, availableWeight,
+          context.details.add(detail("采购成本", "批次采购成本", batch.getContractNo(), batch.getContractNo(),
+              batch.getContainerNo(), batch.getFactoryNo(), batch.getProductionDate(), batch.getExpiryDate(),
+              batch.getAvailableBoxes(), purchaseAmount, purchaseAmount, availableWeight,
               availableWeight, "采购单价按确认函产品行带出，金额按当前剩余重量计算"));
         }
 
@@ -104,7 +105,8 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
           accumulator.detailCount++;
           accumulator.allocatedFeeAmount = accumulator.allocatedFeeAmount.add(allocated);
           context.details.add(detail(component.costType, component.costName, component.sourceNo, batch.getContractNo(),
-              batch.getContainerNo(), batch.getFactoryNo(), component.amount, allocated, availableWeight,
+              batch.getContainerNo(), batch.getFactoryNo(), batch.getProductionDate(), batch.getExpiryDate(),
+              batch.getAvailableBoxes(), component.amount, allocated, availableWeight,
               totalBasisWeight, component.remark));
         }
       }
@@ -260,7 +262,8 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
   }
 
   private ErpInventoryCostDetailVo detail(String costType, String costName, String sourceNo, String contractNo,
-                                          String containerNo, String factoryNo, BigDecimal sourceAmount,
+                                          String containerNo, String factoryNo, java.util.Date productionDate,
+                                          java.util.Date expiryDate, Integer availableBoxes, BigDecimal sourceAmount,
                                           BigDecimal allocatedAmount, BigDecimal basisWeightKg,
                                           BigDecimal totalBasisWeightKg, String remark) {
     ErpInventoryCostDetailVo detail = new ErpInventoryCostDetailVo();
@@ -270,6 +273,9 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
     detail.setContractNo(contractNo);
     detail.setContainerNo(containerNo);
     detail.setFactoryNo(factoryNo);
+    detail.setProductionDate(productionDate);
+    detail.setExpiryDate(expiryDate);
+    detail.setAvailableBoxes(availableBoxes == null ? 0 : availableBoxes);
     detail.setSourceAmount(money(sourceAmount));
     detail.setAllocatedAmount(money(allocatedAmount));
     detail.setBasisWeightKg(weight(basisWeightKg));
