@@ -1063,15 +1063,8 @@ implements ErpSaleOrderService {
         if (item == null) {
             return "-";
         }
-        String code = this.firstNonBlank(item.getProductCode(), "");
         String name = this.displayProductName(item);
-        if (StringUtils.isBlank((String)code)) {
-            return this.firstNonBlank(name, "-");
-        }
-        if (StringUtils.isBlank((String)name)) {
-            return code;
-        }
-        return code + " " + name;
+        return this.firstNonBlank(name, "-");
     }
 
     private String displayProductName(ErpSaleOrderItemEntity item) {
