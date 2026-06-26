@@ -31,6 +31,13 @@ public class ErpFunderLoanEntity implements Serializable {
   private BigDecimal annualInterestRate;
   @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
   private Date loanDate;
+  private Integer loanCreditDays;
+  private Integer warningDays;
+  @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+  private Date originalDueDate;
+  @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+  private Date currentDueDate;
+  private String dueExtendReason;
   private BigDecimal repaidPrincipal;
   private BigDecimal remainingPrincipal;
   private BigDecimal interestAmount;
@@ -40,4 +47,13 @@ public class ErpFunderLoanEntity implements Serializable {
 
   @TableField(exist = false)
   private List<ErpFunderLoanRepaymentEntity> repaymentList;
+
+  @TableField(exist = false)
+  private Integer remainingDays;
+
+  @TableField(exist = false)
+  private String dueAlertStatus;
+
+  @TableField(exist = false)
+  private String dueAlertStatusName;
 }

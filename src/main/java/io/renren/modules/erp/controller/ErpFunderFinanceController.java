@@ -2,6 +2,7 @@ package io.renren.modules.erp.controller;
 
 import io.renren.common.utils.R;
 import io.renren.modules.erp.entity.ErpFunderBatchSettlementEntity;
+import io.renren.modules.erp.entity.ErpFunderLoanEntity;
 import io.renren.modules.erp.entity.ErpFunderLoanRepaymentEntity;
 import io.renren.modules.erp.entity.ErpFunderPaymentEntity;
 import io.renren.modules.erp.service.ErpFunderFinanceService;
@@ -82,6 +83,13 @@ public class ErpFunderFinanceController extends AbstractController {
   @RequiresPermissions("erp:funderloan:update")
   public R calculateRepayment(@RequestBody ErpFunderLoanRepaymentEntity repayment) {
     return R.ok().put("repayment", funderFinanceService.calculateRepayment(repayment));
+  }
+
+  @PostMapping("/loan/due-date/extend")
+  @RequiresPermissions("erp:funderloan:update")
+  public R extendLoanDueDate(@RequestBody ErpFunderLoanEntity loan) {
+    funderFinanceService.extendLoanDueDate(loan, getUserId());
+    return R.ok();
   }
 
   @PostMapping("/loan/repayment/confirm")

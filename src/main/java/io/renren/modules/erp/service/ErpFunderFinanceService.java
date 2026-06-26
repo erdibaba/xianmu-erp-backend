@@ -34,6 +34,8 @@ public interface ErpFunderFinanceService {
 
   ErpFunderLoanRepaymentEntity calculateRepayment(ErpFunderLoanRepaymentEntity repayment);
 
+  void extendLoanDueDate(ErpFunderLoanEntity loan, Long userId);
+
   void confirmRepayment(ErpFunderLoanRepaymentEntity repayment, Long userId);
 
   List<ErpSaleOutboundBatchEntity> querySettleableOutboundBatches(String keyword);

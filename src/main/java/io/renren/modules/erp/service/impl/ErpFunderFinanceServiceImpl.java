@@ -339,6 +339,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         && (funder.getAnnualInterestRate() == null || funder.getAnnualInterestRate().compareTo(BigDecimal.ZERO) <= 0)) {
       throw new RuntimeException("所选资方未维护年利率，请先到往来单位维护资方年利率");
     }
+    if (paymentType == PAYMENT_TYPE_FUNDER
+        && (funder.getFunderCreditDays() == null || funder.getFunderCreditDays() <= 0)) {
+      throw new RuntimeException("所选资方未维护账期天数，请先到往来单位维护资方账期天数");
+    }
 
     BigDecimal allocationTotal = BigDecimal.ZERO;
     boolean xianmuInstallmentsComplete = true;
@@ -418,6 +422,10 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       loan.setLoanAmount(loanPrincipal);
       loan.setAnnualInterestRate(rate(funder.getAnnualInterestRate()));
       loan.setLoanDate(payment.getPaymentDate());
+      loan.setLoanCreditDays(positiveInteger(funder.getFunderCreditDays()));
+      loan.setWarningDays(defaultWarningDays(funder.getFunderWarningDays()));
+      loan.setOriginalDueDate(addDays(payment.getPaymentDate(), loan.getLoanCreditDays()));
+      loan.setCurrentDueDate(loan.getOriginalDueDate());
       loan.setRepaidPrincipal(money(BigDecimal.ZERO));
       loan.setRemainingPrincipal(loanPrincipal);
       loan.setInterestAmount(decimal2(BigDecimal.ZERO));
@@ -432,6 +440,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   public PageUtils queryLoanPage(Map<String, Object> params) {
     String keyword = stringValue(params.get("keyword"));
     String status = stringValue(params.get("status"));
+    String dueStatus = stringValue(params.get("dueStatus"));
     String funderId = stringValue(params.get("funderId"));
     QueryWrapper<ErpFunderLoanEntity> wrapper = new QueryWrapper<ErpFunderLoanEntity>()
         .orderByAsc("status")
@@ -446,11 +455,17 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (StringUtils.isNotBlank(status)) {
       wrapper.eq("status", Integer.valueOf(status));
     }
+    if (StringUtils.isNotBlank(dueStatus)) {
+      applyDueStatusFilter(wrapper, dueStatus);
+    }
     if (StringUtils.isNotBlank(funderId)) {
       wrapper.eq("funder_id", Long.valueOf(funderId));
     }
     IPage<ErpFunderLoanEntity> page = loanDao.selectPage(
         new Query<ErpFunderLoanEntity>().getPage(params), wrapper);
+    for (ErpFunderLoanEntity loan : page.getRecords()) {
+      fillLoanDueAlert(loan);
+    }
     return new PageUtils(page);
   }
 
@@ -458,12 +473,38 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
   public ErpFunderLoanEntity getLoanDetail(Long id) {
     ErpFunderLoanEntity loan = loanDao.selectById(id);
     if (loan != null) {
+      fillLoanDueAlert(loan);
       loan.setRepaymentList(repaymentDao.selectList(
           new QueryWrapper<ErpFunderLoanRepaymentEntity>()
               .eq("loan_id", id)
               .orderByAsc("line_no", "id")));
     }
     return loan;
+  }
+
+  @Override
+  @Transactional(rollbackFor = Exception.class)
+  public void extendLoanDueDate(ErpFunderLoanEntity request, Long userId) {
+    if (request == null || request.getId() == null) {
+      throw new RuntimeException("请选择需要延期的资方贷款");
+    }
+    if (request.getCurrentDueDate() == null) {
+      throw new RuntimeException("请选择新的当前到期日");
+    }
+    ErpFunderLoanEntity loan = loanDao.selectById(request.getId());
+    if (loan == null) {
+      throw new RuntimeException("资方贷款记录不存在");
+    }
+    if (loan.getStatus() != null && loan.getStatus() == 1) {
+      throw new RuntimeException("已结清贷款不需要延期");
+    }
+    if (loan.getLoanDate() != null && request.getCurrentDueDate().before(loan.getLoanDate())) {
+      throw new RuntimeException("当前到期日不能早于贷款日期");
+    }
+    loan.setCurrentDueDate(request.getCurrentDueDate());
+    loan.setDueExtendReason(StringUtils.left(StringUtils.defaultString(request.getDueExtendReason()), 500));
+    loan.setUpdateTime(new Date());
+    loanDao.updateById(loan);
   }
 
   @Override
@@ -1558,6 +1599,81 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     if (count != null && count > 0) {
       throw new RuntimeException("该鲜牧出资款凭证已经使用，请勿重复提交");
     }
+  }
+
+  private void applyDueStatusFilter(QueryWrapper<ErpFunderLoanEntity> wrapper, String dueStatus) {
+    if ("settled".equalsIgnoreCase(dueStatus)) {
+      wrapper.eq("status", 1);
+      return;
+    }
+    if ("overdue".equalsIgnoreCase(dueStatus)) {
+      wrapper.eq("status", 0)
+          .isNotNull("current_due_date")
+          .lt("current_due_date", LocalDate.now().toString());
+      return;
+    }
+    if ("warning".equalsIgnoreCase(dueStatus)) {
+      wrapper.eq("status", 0)
+          .isNotNull("current_due_date")
+          .apply("current_due_date >= CURDATE()")
+          .apply("current_due_date <= DATE_ADD(CURDATE(), INTERVAL IFNULL(warning_days, 14) DAY)");
+      return;
+    }
+    if ("normal".equalsIgnoreCase(dueStatus)) {
+      wrapper.eq("status", 0)
+          .and(q -> q.isNull("current_due_date")
+              .or()
+              .apply("current_due_date > DATE_ADD(CURDATE(), INTERVAL IFNULL(warning_days, 14) DAY)"));
+    }
+  }
+
+  private void fillLoanDueAlert(ErpFunderLoanEntity loan) {
+    if (loan == null) {
+      return;
+    }
+    if (loan.getStatus() != null && loan.getStatus() == 1) {
+      loan.setDueAlertStatus("settled");
+      loan.setDueAlertStatusName("已结清");
+      return;
+    }
+    if (loan.getCurrentDueDate() == null) {
+      loan.setDueAlertStatus("none");
+      loan.setDueAlertStatusName("未设置到期日");
+      return;
+    }
+    LocalDate today = LocalDate.now();
+    LocalDate dueDate = loan.getCurrentDueDate().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    int remainingDays = Math.toIntExact(ChronoUnit.DAYS.between(today, dueDate));
+    loan.setRemainingDays(remainingDays);
+    if (remainingDays < 0) {
+      loan.setDueAlertStatus("overdue");
+      loan.setDueAlertStatusName("已逾期");
+      return;
+    }
+    int warningDays = defaultWarningDays(loan.getWarningDays());
+    if (remainingDays <= warningDays) {
+      loan.setDueAlertStatus("warning");
+      loan.setDueAlertStatusName("即将到期");
+      return;
+    }
+    loan.setDueAlertStatus("normal");
+    loan.setDueAlertStatusName("未到预警期");
+  }
+
+  private Integer positiveInteger(Integer value) {
+    return value == null || value <= 0 ? null : value;
+  }
+
+  private int defaultWarningDays(Integer value) {
+    return value == null || value < 0 ? 14 : value;
+  }
+
+  private Date addDays(Date date, Integer days) {
+    if (date == null || days == null || days <= 0) {
+      return null;
+    }
+    LocalDate localDate = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate().plusDays(days);
+    return Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
   }
 
   private int naturalDays(Date startDate, Date endDate) {

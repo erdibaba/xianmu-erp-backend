@@ -21,6 +21,7 @@ public class ErpPartnerEntity implements Serializable {
   private Integer coldStorageFreeDays;
   private BigDecimal annualInterestRate;
   private Integer funderCreditDays;
+  private Integer funderWarningDays;
   private String funderFeeRuleType;
   private String taxNo;
   private String bankName;
