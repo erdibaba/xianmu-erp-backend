@@ -344,7 +344,7 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     builder.append("客户：").append(StringUtils.defaultIfBlank(partner.getPartnerName(), "-")).append("\n");
     builder.append("销售单号：").append(StringUtils.defaultIfBlank(order.getOrderNo(), "-")).append("\n");
     builder.append("合同号：").append(StringUtils.defaultIfBlank(order.getContractNo(), "-")).append("\n");
-    builder.append("请点击以下链接下载合同，并按流程上传盖章合同、打款凭证：\n");
+    builder.append("请点击链接下载合同：\n");
     builder.append(portalUrl);
     return builder.toString();
   }
