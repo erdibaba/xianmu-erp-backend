@@ -14,6 +14,8 @@ public class ErpShipNoticeEntity implements Serializable {
   @TableId
   private Long id;
   private Long presaleOrderId;
+  private Long confirmId;
+  private String noticeType;
   private Long partnerId;
   private String partnerName;
   private String chatId;
@@ -22,6 +24,7 @@ public class ErpShipNoticeEntity implements Serializable {
   private String contractNo;
   private String containerNo;
   private Date expectedArrivalDate;
+  private Date actualArrivalDate;
   private String content;
   private String wecomMsgId;
   private Integer status;

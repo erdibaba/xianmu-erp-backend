@@ -1,10 +1,13 @@
 package io.renren.modules.erp.controller;
 
 import io.renren.common.utils.R;
+import io.renren.modules.erp.entity.ErpShipNoticeEntity;
 import io.renren.modules.erp.entity.ErpSaleUploadNoticeEntity;
 import io.renren.modules.erp.service.ErpWecomService;
 import io.renren.modules.sys.controller.AbstractController;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
@@ -48,6 +51,27 @@ public class ErpWecomController extends AbstractController {
     return R.ok().put("list", erpWecomService.sendShipNotice(presaleOrderId, partnerIds, content, getUserId()));
   }
 
+  @GetMapping("/arrival-notice/partners")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R arrivalNoticePartners(@RequestParam("confirmId") Long confirmId) {
+    return R.ok().put("list", erpWecomService.selectArrivalNoticePartners(confirmId));
+  }
+
+  @PostMapping("/arrival-notice/send")
+  @RequiresPermissions("erp:tradeorder:update")
+  public R sendArrivalNotice(@RequestBody Map<String, Object> params) {
+    try {
+      Long confirmId = toLong(params.get("confirmId"));
+      List<Long> partnerIds = toLongList(params.get("partnerIds"));
+      Date actualArrivalDate = parseDate(params.get("actualArrivalDate"));
+      String content = params.get("content") == null ? null : params.get("content").toString();
+      List<ErpShipNoticeEntity> notices = erpWecomService.sendArrivalNotice(confirmId, partnerIds, actualArrivalDate, content, getUserId());
+      return R.ok().put("list", notices);
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
+  }
+
   @PostMapping("/sale-upload-notice/send")
   @RequiresPermissions("erp:tradeorder:update")
   public R sendSaleUploadNotice(@RequestBody Map<String, Object> params) {
@@ -79,5 +103,16 @@ public class ErpWecomController extends AbstractController {
       }
     }
     return list;
+  }
+
+  private Date parseDate(Object value) {
+    if (value == null || "".equals(value.toString())) {
+      return null;
+    }
+    try {
+      return new SimpleDateFormat("yyyy-MM-dd").parse(value.toString());
+    } catch (Exception e) {
+      throw new RuntimeException("日期格式错误，请使用yyyy-MM-dd");
+    }
   }
 }

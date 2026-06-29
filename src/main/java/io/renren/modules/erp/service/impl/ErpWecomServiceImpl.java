@@ -37,6 +37,8 @@ import org.springframework.web.client.RestTemplate;
 @Service("erpWecomService")
 public class ErpWecomServiceImpl implements ErpWecomService {
   private static final String WECOM_API = "https://qyapi.weixin.qq.com";
+  private static final String NOTICE_TYPE_SCHEDULE = "SCHEDULE";
+  private static final String NOTICE_TYPE_ARRIVAL = "ARRIVAL";
   private static final String SALE_CONTRACT_BASE_URL = "http://218.202.240.118:8888/renren-fast/erp/saleorder/contract/";
   private static final String SALE_UPLOAD_PORTAL_BASE_URL = "http://218.202.240.118:3001/#/sale-upload/";
 
@@ -172,6 +174,48 @@ public class ErpWecomServiceImpl implements ErpWecomService {
   }
 
   @Override
+  public List<ErpPartnerEntity> selectArrivalNoticePartners(Long confirmId) {
+    ErpPresaleConfirmEntity confirm = loadConfirm(confirmId);
+    Set<Long> partnerIds = findLinkedFuturesPartnerIds(confirm.getPresaleOrderId());
+    List<ErpPartnerEntity> partners = new ArrayList<>();
+    for (Long partnerId : partnerIds) {
+      ErpPartnerEntity partner = erpPartnerDao.selectById(partnerId);
+      if (partner != null) {
+        partners.add(partner);
+      }
+    }
+    return partners;
+  }
+
+  @Override
+  public List<ErpShipNoticeEntity> sendArrivalNotice(Long confirmId, List<Long> partnerIds, Date actualArrivalDate, String content, Long userId) {
+    ErpPresaleConfirmEntity confirm = loadConfirm(confirmId);
+    if (actualArrivalDate == null) {
+      actualArrivalDate = confirm.getExpectedArrivalDate();
+    }
+    if (actualArrivalDate == null) {
+      throw new RuntimeException("请填写实际到港日期");
+    }
+    if (partnerIds == null || partnerIds.isEmpty()) {
+      partnerIds = new ArrayList<>(findLinkedFuturesPartnerIds(confirm.getPresaleOrderId()));
+    }
+    if (partnerIds.isEmpty()) {
+      throw new RuntimeException("该确认函未找到关联期货销售单二批商");
+    }
+    List<ErpShipNoticeEntity> notices = new ArrayList<>();
+    for (Long partnerId : partnerIds) {
+      if (partnerId == null || partnerId <= 0) {
+        continue;
+      }
+      notices.add(sendArrivalNoticeToPartner(confirm, partnerId, actualArrivalDate, content, userId));
+    }
+    if (notices.isEmpty()) {
+      throw new RuntimeException("请选择有效二批商");
+    }
+    return notices;
+  }
+
+  @Override
   public ErpSaleUploadNoticeEntity sendSaleUploadNotice(Long saleOrderId, boolean force, Long userId) {
     if (saleOrderId == null || saleOrderId <= 0) {
       throw new RuntimeException("请选择销售单");
@@ -215,7 +259,7 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     if (StringUtils.isBlank(sender)) {
       throw new RuntimeException("请配置企业微信群主或默认发送人");
     }
-    ErpShipNoticeEntity existing = findExistingSuccessNotice(presale.getId(), partnerId, confirm.getExpectedArrivalDate());
+    ErpShipNoticeEntity existing = findExistingSuccessNotice(NOTICE_TYPE_SCHEDULE, presale.getId(), confirm.getId(), partnerId, confirm.getExpectedArrivalDate(), null);
     if (existing != null) {
       return existing;
     }
@@ -236,6 +280,8 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     Date now = new Date();
     ErpShipNoticeEntity notice = new ErpShipNoticeEntity();
     notice.setPresaleOrderId(presale.getId());
+    notice.setConfirmId(confirm.getId());
+    notice.setNoticeType(NOTICE_TYPE_SCHEDULE);
     notice.setPartnerId(partnerId);
     notice.setPartnerName(partner.getPartnerName());
     notice.setChatId(partner.getWecomChatId());
@@ -244,6 +290,61 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     notice.setContractNo(firstNonBlank(confirm.getContractNo(), presale.getSellerContractNo(), presale.getOrderNo()));
     notice.setContainerNo(confirm.getContainerNo());
     notice.setExpectedArrivalDate(confirm.getExpectedArrivalDate());
+    notice.setContent(noticeContent);
+    notice.setWecomMsgId(response.getString("msgid"));
+    notice.setStatus(1);
+    notice.setErrorMessage(response.getString("errmsg"));
+    notice.setCreateUserId(userId);
+    notice.setCreateTime(now);
+    notice.setUpdateTime(now);
+    erpShipNoticeDao.insert(notice);
+    return notice;
+  }
+
+  private ErpShipNoticeEntity sendArrivalNoticeToPartner(ErpPresaleConfirmEntity confirm, Long partnerId, Date actualArrivalDate, String content, Long userId) {
+    ErpPartnerEntity partner = erpPartnerDao.selectById(partnerId);
+    if (partner == null) {
+      throw new RuntimeException("二批商不存在");
+    }
+    if (StringUtils.isBlank(partner.getWecomChatId())) {
+      throw new RuntimeException("该二批商未绑定企业微信客户群");
+    }
+    String sender = StringUtils.defaultIfBlank(partner.getWecomChatOwner(), defaultSender);
+    if (StringUtils.isBlank(sender)) {
+      throw new RuntimeException("请配置企业微信群主或默认发送人");
+    }
+    ErpShipNoticeEntity existing = findExistingSuccessNotice(NOTICE_TYPE_ARRIVAL, confirm.getPresaleOrderId(), confirm.getId(), partnerId, null, actualArrivalDate);
+    if (existing != null) {
+      return existing;
+    }
+
+    String noticeContent = StringUtils.defaultIfBlank(content, buildArrivalNoticeContent(confirm, partner, actualArrivalDate));
+    JSONObject text = new JSONObject();
+    text.put("content", noticeContent);
+    JSONObject body = new JSONObject();
+    body.put("chat_type", "group");
+    body.put("sender", sender);
+    body.put("allow_select", false);
+    JSONArray chatIds = new JSONArray();
+    chatIds.add(partner.getWecomChatId());
+    body.put("chat_id_list", chatIds);
+    body.put("text", text);
+    JSONObject response = post("/cgi-bin/externalcontact/add_msg_template", body);
+
+    Date now = new Date();
+    ErpShipNoticeEntity notice = new ErpShipNoticeEntity();
+    notice.setPresaleOrderId(confirm.getPresaleOrderId());
+    notice.setConfirmId(confirm.getId());
+    notice.setNoticeType(NOTICE_TYPE_ARRIVAL);
+    notice.setPartnerId(partnerId);
+    notice.setPartnerName(partner.getPartnerName());
+    notice.setChatId(partner.getWecomChatId());
+    notice.setChatName(partner.getWecomChatName());
+    notice.setSender(sender);
+    notice.setContractNo(confirm.getContractNo());
+    notice.setContainerNo(confirm.getContainerNo());
+    notice.setExpectedArrivalDate(confirm.getExpectedArrivalDate());
+    notice.setActualArrivalDate(actualArrivalDate);
     notice.setContent(noticeContent);
     notice.setWecomMsgId(response.getString("msgid"));
     notice.setStatus(1);
@@ -349,16 +450,25 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     return builder.toString();
   }
 
-  private ErpShipNoticeEntity findExistingSuccessNotice(Long presaleOrderId, Long partnerId, Date expectedArrivalDate) {
-    if (presaleOrderId == null || partnerId == null || expectedArrivalDate == null) {
+  private ErpShipNoticeEntity findExistingSuccessNotice(String noticeType, Long presaleOrderId, Long confirmId, Long partnerId, Date expectedArrivalDate, Date actualArrivalDate) {
+    if (presaleOrderId == null || partnerId == null) {
       return null;
     }
-    return erpShipNoticeDao.selectOne(new QueryWrapper<ErpShipNoticeEntity>()
+    QueryWrapper<ErpShipNoticeEntity> wrapper = new QueryWrapper<ErpShipNoticeEntity>()
         .eq("presale_order_id", presaleOrderId)
         .eq("partner_id", partnerId)
-        .eq("expected_arrival_date", expectedArrivalDate)
-        .in("status", 1, 2)
-        .last("limit 1"));
+        .eq("notice_type", noticeType)
+        .in("status", 1, 2);
+    if (confirmId != null) {
+      wrapper.eq("confirm_id", confirmId);
+    }
+    if (expectedArrivalDate != null) {
+      wrapper.eq("expected_arrival_date", expectedArrivalDate);
+    }
+    if (actualArrivalDate != null) {
+      wrapper.eq("actual_arrival_date", actualArrivalDate);
+    }
+    return erpShipNoticeDao.selectOne(wrapper.last("limit 1"));
   }
 
   private ErpWecomGroupEntity syncGroupDetail(String chatId, Integer status) {
@@ -410,6 +520,48 @@ public class ErpWecomServiceImpl implements ErpWecomService {
     }
     builder.append("\n请留意后续到港及提货安排。");
     return builder.toString();
+  }
+
+  private String buildArrivalNoticeContent(ErpPresaleConfirmEntity confirm, ErpPartnerEntity partner, Date actualArrivalDate) {
+    SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+    StringBuilder builder = new StringBuilder();
+    builder.append("【鲜牧供应链到港通知】\n");
+    builder.append("二批商：").append(StringUtils.defaultIfBlank(partner.getPartnerName(), "-")).append("\n");
+    builder.append("合同号：").append(StringUtils.defaultIfBlank(confirm.getContractNo(), "-")).append("\n");
+    if (StringUtils.isNotBlank(confirm.getContainerNo())) {
+      builder.append("集装箱号：").append(confirm.getContainerNo()).append("\n");
+    }
+    builder.append("到港日期：").append(actualArrivalDate == null ? "-" : format.format(actualArrivalDate)).append("\n");
+    builder.append("\n货物已到港，请关注后续入库及提货安排。");
+    return builder.toString();
+  }
+
+  private ErpPresaleConfirmEntity loadConfirm(Long confirmId) {
+    if (confirmId == null || confirmId <= 0) {
+      throw new RuntimeException("请选择客户订单确认函");
+    }
+    ErpPresaleConfirmEntity confirm = erpPresaleConfirmDao.selectById(confirmId);
+    if (confirm == null) {
+      throw new RuntimeException("客户订单确认函不存在");
+    }
+    return confirm;
+  }
+
+  private Set<Long> findLinkedFuturesPartnerIds(Long presaleOrderId) {
+    Set<Long> partnerIds = new LinkedHashSet<>();
+    if (presaleOrderId == null || presaleOrderId <= 0) {
+      return partnerIds;
+    }
+    List<ErpSaleOrderEntity> saleOrders = erpSaleOrderDao.selectList(new QueryWrapper<ErpSaleOrderEntity>()
+        .eq("sale_type", "FUTURES")
+        .eq("source_presale_order_id", presaleOrderId)
+        .isNotNull("secondary_partner_id"));
+    for (ErpSaleOrderEntity saleOrder : saleOrders) {
+      if (saleOrder.getSecondaryPartnerId() != null) {
+        partnerIds.add(saleOrder.getSecondaryPartnerId());
+      }
+    }
+    return partnerIds;
   }
 
   private JSONObject post(String path, JSONObject body) {
