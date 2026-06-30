@@ -73,6 +73,26 @@ public class SysMenuEntity implements Serializable,Comparable<SysMenuEntity> {
 	 * 排序
 	 */
 	private Integer orderNum;
+
+	/**
+	 * 手机端是否显示 0-否 1-是
+	 */
+	private Integer mobileVisible;
+
+	/**
+	 * 手机端展示名称
+	 */
+	private String mobileTitle;
+
+	/**
+	 * 手机端图标
+	 */
+	private String mobileIcon;
+
+	/**
+	 * 手机端跳转地址
+	 */
+	private String mobileUrl;
 	
 	/**
 	 * ztree属性
