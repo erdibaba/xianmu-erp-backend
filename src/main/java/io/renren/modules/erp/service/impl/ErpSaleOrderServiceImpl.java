@@ -26,6 +26,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import io.renren.common.utils.Constant;
 import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.Query;
 import io.renren.modules.erp.dao.ErpInboundOrderDao;
@@ -214,10 +215,16 @@ implements ErpSaleOrderService {
 
     @Override
     public PageUtils queryPage(Map<String, Object> params) {
+        return this.queryPage(params, null);
+    }
+
+    @Override
+    public PageUtils queryPage(Map<String, Object> params, Long userId) {
         QueryWrapper<ErpSaleOrderEntity> wrapper = new QueryWrapper<ErpSaleOrderEntity>().orderByDesc(new String[]{"create_time", "id"});
         String keyword = this.stringValue(params.get("keyword"));
         String saleType = this.stringValue(params.get("saleType"));
         String status = this.stringValue(params.get("status"));
+        this.applySalespersonScope(wrapper, userId);
         if (StringUtils.isNotBlank((String)keyword)) {
             wrapper.and(w -> w.like("order_no", keyword).or().like("contract_no", keyword).or().like("secondary_partner_name", keyword).or().like("warehouse_name", keyword).or().like("salesperson_name", keyword));
         }
@@ -236,13 +243,43 @@ implements ErpSaleOrderService {
 
     @Override
     public ErpSaleOrderEntity getDetail(Long id) {
+        return this.getDetail(id, null);
+    }
+
+    @Override
+    public ErpSaleOrderEntity getDetail(Long id, Long userId) {
         ErpSaleOrderEntity order = (ErpSaleOrderEntity)this.getById(id);
         if (order == null) {
             return null;
         }
+        this.checkSalespersonScope(order, userId);
         this.loadChildren(order);
         this.enrichOrderDisplay(order, true);
         return order;
+    }
+
+    private void applySalespersonScope(QueryWrapper<ErpSaleOrderEntity> wrapper, Long userId) {
+        Long salespersonId = this.resolveCurrentSalespersonId(userId);
+        if (salespersonId != null) {
+            wrapper.eq("salesperson_id", salespersonId);
+        }
+    }
+
+    private void checkSalespersonScope(ErpSaleOrderEntity order, Long userId) {
+        Long salespersonId = this.resolveCurrentSalespersonId(userId);
+        if (salespersonId != null && !salespersonId.equals(order.getSalespersonId())) {
+            throw new RuntimeException("无权查看该销售单");
+        }
+    }
+
+    private Long resolveCurrentSalespersonId(Long userId) {
+        if (userId == null || userId.longValue() == Constant.SUPER_ADMIN) {
+            return null;
+        }
+        QueryWrapper<ErpSalespersonEntity> wrapper = new QueryWrapper<ErpSalespersonEntity>();
+        wrapper.eq("sys_user_id", userId).eq("status", 1).last("limit 1");
+        ErpSalespersonEntity salesperson = (ErpSalespersonEntity)this.erpSalespersonDao.selectOne((Wrapper)wrapper);
+        return salesperson == null ? null : salesperson.getId();
     }
 
     @Override

@@ -40,14 +40,18 @@ public class ErpSaleOrderController extends AbstractController {
   @GetMapping("/list")
   @RequiresPermissions("erp:tradeorder:list")
   public R list(@RequestParam Map<String, Object> params) {
-    PageUtils page = erpSaleOrderService.queryPage(params);
+    PageUtils page = erpSaleOrderService.queryPage(params, getUserId());
     return R.ok().put("page", page);
   }
 
   @GetMapping("/info/{id}")
   @RequiresPermissions("erp:tradeorder:info")
   public R info(@PathVariable("id") Long id) {
-    return R.ok().put("saleOrder", erpSaleOrderService.getDetail(id));
+    try {
+      return R.ok().put("saleOrder", erpSaleOrderService.getDetail(id, getUserId()));
+    } catch (RuntimeException e) {
+      return R.error(e.getMessage());
+    }
   }
 
   @PostMapping("/save")

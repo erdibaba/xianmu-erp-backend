@@ -16,7 +16,11 @@ import org.springframework.web.multipart.MultipartFile;
 public interface ErpSaleOrderService {
   PageUtils queryPage(Map<String, Object> params);
 
+  PageUtils queryPage(Map<String, Object> params, Long userId);
+
   ErpSaleOrderEntity getDetail(Long id);
+
+  ErpSaleOrderEntity getDetail(Long id, Long userId);
 
   void saveOrder(ErpSaleOrderEntity order, Long userId);
 
