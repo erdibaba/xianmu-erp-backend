@@ -7,7 +7,11 @@ UPDATE sys_menu SET icon = 'editor' WHERE menu_id = 45 AND icon = 'fa fa-shoppin
 UPDATE sys_menu SET icon = 'zonghe' WHERE menu_id = 46 AND icon = 'fa fa-cubes';
 UPDATE sys_menu SET icon = 'mudedi' WHERE menu_id = 68 AND icon = 'fa fa-building-o';
 UPDATE sys_menu SET icon = 'bianji' WHERE menu_id = 73 AND icon = 'fa fa-check-square-o';
+UPDATE sys_menu SET icon = 'log' WHERE menu_id = 74 AND icon = 'el-icon-document-checked';
+UPDATE sys_menu SET icon = 'tixing' WHERE menu_id = 79 AND icon = 'el-icon-bank-card';
+UPDATE sys_menu SET icon = 'tubiao' WHERE menu_id = 82 AND icon = 'el-icon-coin';
 UPDATE sys_menu SET icon = 'zhedie' WHERE menu_id = 88 AND icon = 'fa fa-exchange';
 UPDATE sys_menu SET icon = 'editor' WHERE menu_id = 93 AND icon = 'fa fa-file-text-o';
+UPDATE sys_menu SET icon = 'zonghe' WHERE menu_id = 104 AND icon = 'el-icon-s-data';
 UPDATE sys_menu SET icon = 'geren' WHERE menu_id = 94 AND icon = 'fa fa-id-card-o';
 UPDATE sys_menu SET icon = 'geren' WHERE menu_id = 108 AND icon = 'fa fa-user-circle-o';
