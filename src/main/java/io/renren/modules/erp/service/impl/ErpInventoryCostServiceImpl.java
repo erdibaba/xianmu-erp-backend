@@ -84,12 +84,15 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
         continue;
       }
       List<ErpInventoryBatchVo> batches = queryVisibleBatches(row, queryParams);
-      RowAccumulator accumulator = getAccumulator(context.rows, row);
       for (ErpInventoryBatchVo batch : batches) {
+        if (!matchDetailContract(batch, params)) {
+          continue;
+        }
         BigDecimal availableWeight = positive(batch.getAvailableWeightKg());
         if (availableWeight.compareTo(ZERO) <= 0) {
           continue;
         }
+        RowAccumulator accumulator = getAccumulator(context.rows, row, batch);
         accumulator.availableWeightKg = accumulator.availableWeightKg.add(availableWeight);
         accumulator.availableBoxes += intValue(batch.getAvailableBoxes());
 
@@ -404,14 +407,31 @@ public class ErpInventoryCostServiceImpl implements ErpInventoryCostService {
     return unitPrice;
   }
 
-  private RowAccumulator getAccumulator(Map<String, RowAccumulator> rows, ErpSpotInventoryVo source) {
-    String key = source.getProductId() + "|" + StringUtils.defaultString(source.getOwnershipName());
+  private boolean matchDetailContract(ErpInventoryBatchVo batch, Map<String, Object> params) {
+    Long detailConfirmId = getLong(params, "confirmId");
+    String detailContractNo = getString(params, "contractNo");
+    if (detailConfirmId != null) {
+      return detailConfirmId.equals(batch.getConfirmId());
+    }
+    if (StringUtils.isNotBlank(detailContractNo)) {
+      return StringUtils.equals(detailContractNo, batch.getContractNo());
+    }
+    return true;
+  }
+
+  private RowAccumulator getAccumulator(Map<String, RowAccumulator> rows, ErpSpotInventoryVo source, ErpInventoryBatchVo batch) {
+    String key = source.getProductId() + "|"
+        + StringUtils.defaultString(source.getOwnershipName()) + "|"
+        + StringUtils.defaultString(batch.getConfirmId() == null ? "" : batch.getConfirmId().toString()) + "|"
+        + StringUtils.defaultString(batch.getContractNo());
     RowAccumulator existing = rows.get(key);
     if (existing != null) {
       return existing;
     }
     ErpInventoryCostVo row = new ErpInventoryCostVo();
     row.setProductId(source.getProductId());
+    row.setConfirmId(batch.getConfirmId());
+    row.setContractNo(batch.getContractNo());
     row.setProductCode(source.getProductCode());
     row.setProductName(source.getProductName());
     row.setProductNameEn(source.getProductNameEn());

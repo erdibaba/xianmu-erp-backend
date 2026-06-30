@@ -15,6 +15,7 @@ public class ErpInventoryBatchVo implements Serializable {
   private Long inboundItemId;
   private Long sourceAdjustmentItemId;
   private Long presaleOrderId;
+  private Long confirmId;
   private String presaleOrderNo;
   private String contractNo;
   private String customerName;

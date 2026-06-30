@@ -9,6 +9,8 @@ public class ErpInventoryCostVo implements Serializable {
   private static final long serialVersionUID = 1L;
 
   private Long productId;
+  private Long confirmId;
+  private String contractNo;
   private String productCode;
   private String productName;
   private String productNameEn;
