@@ -56,4 +56,20 @@ public class ErpFunderLoanEntity implements Serializable {
 
   @TableField(exist = false)
   private String dueAlertStatusName;
+
+  @TableField(exist = false)
+  private BigDecimal settledInterestAmount;
+
+  @TableField(exist = false)
+  private BigDecimal currentAccruedInterestAmount;
+
+  @TableField(exist = false)
+  private BigDecimal totalInterestAmount;
+
+  @TableField(exist = false)
+  private Integer currentAccruedInterestDays;
+
+  @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+  @TableField(exist = false)
+  private Date currentAccruedInterestAsOfDate;
 }

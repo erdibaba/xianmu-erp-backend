@@ -465,6 +465,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
         new Query<ErpFunderLoanEntity>().getPage(params), wrapper);
     for (ErpFunderLoanEntity loan : page.getRecords()) {
       fillLoanDueAlert(loan);
+      fillLoanInterestSummary(loan);
     }
     return new PageUtils(page);
   }
@@ -474,6 +475,7 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     ErpFunderLoanEntity loan = loanDao.selectById(id);
     if (loan != null) {
       fillLoanDueAlert(loan);
+      fillLoanInterestSummary(loan);
       loan.setRepaymentList(repaymentDao.selectList(
           new QueryWrapper<ErpFunderLoanRepaymentEntity>()
               .eq("loan_id", id)
@@ -1658,6 +1660,41 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
     }
     loan.setDueAlertStatus("normal");
     loan.setDueAlertStatusName("未到预警期");
+  }
+
+  private void fillLoanInterestSummary(ErpFunderLoanEntity loan) {
+    if (loan == null) {
+      return;
+    }
+    BigDecimal settledInterest = decimal2(loan.getInterestAmount());
+    BigDecimal currentAccruedInterest = BigDecimal.ZERO;
+    Integer days = 0;
+    LocalDate today = LocalDate.now();
+    if (loan.getStatus() == null || loan.getStatus() != 1) {
+      days = currentAccruedInterestDays(loan.getLoanDate(), today);
+      BigDecimal remainingPrincipal = money(loan.getRemainingPrincipal());
+      if (remainingPrincipal.compareTo(BigDecimal.ZERO) > 0 && days > 0) {
+        currentAccruedInterest = remainingPrincipal
+            .multiply(rate(loan.getAnnualInterestRate()))
+            .divide(ONE_HUNDRED, 16, RoundingMode.HALF_UP)
+            .divide(DAYS_PER_YEAR, 16, RoundingMode.HALF_UP)
+            .multiply(new BigDecimal(days));
+      }
+    }
+    loan.setSettledInterestAmount(settledInterest);
+    loan.setCurrentAccruedInterestAmount(decimal2(currentAccruedInterest));
+    loan.setTotalInterestAmount(decimal2(settledInterest.add(currentAccruedInterest)));
+    loan.setCurrentAccruedInterestDays(days);
+    loan.setCurrentAccruedInterestAsOfDate(Date.from(today.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+  }
+
+  private int currentAccruedInterestDays(Date loanDate, LocalDate today) {
+    if (loanDate == null || today == null) {
+      return 0;
+    }
+    LocalDate start = loanDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    long days = ChronoUnit.DAYS.between(start, today);
+    return days < 0 ? 0 : Math.toIntExact(days);
   }
 
   private Integer positiveInteger(Integer value) {
