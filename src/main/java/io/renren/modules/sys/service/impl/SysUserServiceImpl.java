@@ -16,7 +16,9 @@ import io.renren.common.utils.Constant;
 import io.renren.common.utils.PageUtils;
 import io.renren.common.utils.Query;
 import io.renren.modules.sys.dao.SysUserDao;
+import io.renren.modules.sys.entity.SysRoleEntity;
 import io.renren.modules.sys.entity.SysUserEntity;
+import io.renren.modules.sys.entity.SysUserRoleEntity;
 import io.renren.modules.sys.service.SysRoleService;
 import io.renren.modules.sys.service.SysUserRoleService;
 import io.renren.modules.sys.service.SysUserService;
@@ -28,9 +30,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 
 /**
@@ -56,8 +62,43 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserDao, SysUserEntity> i
 				.like(StringUtils.isNotBlank(username),"username", username)
 				.eq(createUserId != null,"create_user_id", createUserId)
 		);
+		fillRoleNames(page.getRecords());
 
 		return new PageUtils(page);
+	}
+
+	private void fillRoleNames(List<SysUserEntity> users) {
+		if (users == null || users.isEmpty()) {
+			return;
+		}
+		List<Long> userIds = users.stream()
+				.map(SysUserEntity::getUserId)
+				.collect(Collectors.toList());
+		List<SysUserRoleEntity> userRoles = sysUserRoleService.list(
+				new QueryWrapper<SysUserRoleEntity>().in("user_id", userIds));
+		if (userRoles == null || userRoles.isEmpty()) {
+			users.forEach(user -> user.setRoleNames(""));
+			return;
+		}
+
+		Set<Long> roleIds = userRoles.stream()
+				.map(SysUserRoleEntity::getRoleId)
+				.collect(Collectors.toSet());
+		Map<Long, String> roleNameMap = roleIds.isEmpty() ? Collections.emptyMap()
+				: sysRoleService.listByIds(roleIds).stream()
+					.collect(Collectors.toMap(SysRoleEntity::getRoleId, SysRoleEntity::getRoleName));
+		Map<Long, List<String>> userRoleNamesMap = new HashMap<>();
+		for (SysUserRoleEntity userRole : userRoles) {
+			String roleName = roleNameMap.get(userRole.getRoleId());
+			if (StringUtils.isBlank(roleName)) {
+				continue;
+			}
+			userRoleNamesMap.computeIfAbsent(userRole.getUserId(), key -> new java.util.ArrayList<>()).add(roleName);
+		}
+		for (SysUserEntity user : users) {
+			List<String> roleNames = userRoleNamesMap.getOrDefault(user.getUserId(), Collections.emptyList());
+			user.setRoleNames(String.join("，", roleNames));
+		}
 	}
 
 	@Override

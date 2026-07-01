@@ -82,6 +82,12 @@ public class SysUserEntity implements Serializable {
 	private List<Long> roleIdList;
 
 	/**
+	 * 角色名称，多个用逗号分隔
+	 */
+	@TableField(exist=false)
+	private String roleNames;
+
+	/**
 	 * 创建者ID
 	 */
 	private Long createUserId;
