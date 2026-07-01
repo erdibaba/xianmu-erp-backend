@@ -62,3 +62,19 @@ WHERE menu_id IN (113, 114, 115)
     SELECT 1 FROM sys_role_menu
     WHERE role_id = 1 AND sys_role_menu.menu_id = sys_menu.menu_id
   );
+
+INSERT INTO `schedule_job` (`bean_name`, `params`, `cron_expression`, `status`, `remark`, `create_time`)
+SELECT 'contractDailyCostTask', 'yesterday', '0 0 2 * * ?', 0,
+       CONVERT(0xe6af8fe5a4a9e5878ce699a832e782b9e7949fe68890e4b88ae4b880e5a4a9e59088e5908ce68890e69cace697a5e68aa5 USING utf8mb4),
+       NOW()
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `schedule_job` WHERE `bean_name` = 'contractDailyCostTask'
+);
+
+UPDATE `schedule_job`
+SET `params` = 'yesterday',
+    `cron_expression` = '0 0 2 * * ?',
+    `status` = 0,
+    `remark` = CONVERT(0xe6af8fe5a4a9e5878ce699a832e782b9e7949fe68890e4b88ae4b880e5a4a9e59088e5908ce68890e69cace697a5e68aa5 USING utf8mb4)
+WHERE `bean_name` = 'contractDailyCostTask';

@@ -15,7 +15,6 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -83,6 +82,15 @@ public class ErpContractDailyCostServiceImpl implements ErpContractDailyCostServ
     DateRange range = dateRange(params);
     String contractNo = text(params, "contractNo");
     ensureSnapshots(contractNo, range.start, range.end, true, userId);
+  }
+
+  @Override
+  @Transactional
+  public void generateSnapshot(LocalDate costDate, Long userId) {
+    if (costDate == null) {
+      costDate = LocalDate.now().minusDays(1);
+    }
+    ensureSnapshots(null, costDate, costDate, true, userId);
   }
 
   private void ensureSnapshots(String contractNoKeyword, LocalDate start, LocalDate end, boolean force, Long userId) {
