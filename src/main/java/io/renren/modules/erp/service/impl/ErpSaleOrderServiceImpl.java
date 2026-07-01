@@ -552,10 +552,6 @@ implements ErpSaleOrderService {
         if (this.defaultFlag(order.getOutboundReceiptConfirmed()) == 1) {
             throw new RuntimeException("销售单出库流程已完成，不能新增出库批次");
         }
-        ErpSaleOutboundBatchEntity openBatch = this.findOpenOutboundBatch(saleOrderId);
-        if (openBatch != null) {
-            throw new RuntimeException("存在未完成的出库批次，请先确认完成或删除后再新增");
-        }
         if (request.getDriverId() == null) {
             throw new RuntimeException("请选择司机");
         }
@@ -579,7 +575,7 @@ implements ErpSaleOrderService {
         for (ErpSaleOrderItemEntity saleItem : saleItems) {
             saleItemMap.put(saleItem.getId(), saleItem);
         }
-        Map<Long, Integer> usedBoxesMap = this.loadConfirmedPlanBoxesBySaleItem(saleOrderId);
+        Map<Long, Integer> usedBoxesMap = this.loadActivePlanBoxesBySaleItem(saleOrderId);
         Date now = new Date();
         ErpSaleOutboundBatchEntity batch = new ErpSaleOutboundBatchEntity();
         batch.setSaleOrderId(saleOrderId);
@@ -2018,11 +2014,11 @@ implements ErpSaleOrderService {
         throw new RuntimeException("请先新增并保存出库批次计划");
     }
 
-    private Map<Long, Integer> loadConfirmedPlanBoxesBySaleItem(Long saleOrderId) {
+    private Map<Long, Integer> loadActivePlanBoxesBySaleItem(Long saleOrderId) {
         Map<Long, Integer> result = new HashMap<Long, Integer>();
         List<ErpSaleOutboundBatchEntity> batches = this.erpSaleOutboundBatchDao.selectList((Wrapper)new QueryWrapper<ErpSaleOutboundBatchEntity>()
                 .eq("sale_order_id", saleOrderId)
-                .eq("status", OUTBOUND_BATCH_CONFIRMED));
+                .ne("status", OUTBOUND_BATCH_VOID));
         if (batches == null || batches.isEmpty()) {
             return result;
         }
