@@ -1467,9 +1467,13 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
       BigDecimal allocationAmount = money(allocation.getAllocationAmount());
       BigDecimal depositAmount = money(allocation.getXianmuDepositModifiedAmount());
       BigDecimal balanceAmount = money(allocation.getXianmuBalanceModifiedAmount());
+      BigDecimal expectedBalanceAmount = money(allocationAmount.subtract(depositAmount));
       if (StringUtils.isBlank(allocation.getXianmuDepositFilePath()) || allocation.getXianmuDepositDate() == null
           || depositAmount.compareTo(BigDecimal.ZERO) <= 0) {
         throw new RuntimeException("鲜牧全款时，每个合同号都必须先上传定金凭证");
+      }
+      if (expectedBalanceAmount.compareTo(BigDecimal.ZERO) < 0) {
+        throw new RuntimeException("鲜牧定金金额不能大于客户订单确认函总金额");
       }
       validateUniqueInstallmentFile("xianmu_deposit_file_path", allocation.getXianmuDepositFilePath(), currentPaymentId,
           "该鲜牧定金凭证已经使用，请勿重复提交");
@@ -1477,17 +1481,20 @@ public class ErpFunderFinanceServiceImpl implements ErpFunderFinanceService {
           || allocation.getXianmuBalanceDate() != null
           || balanceAmount.compareTo(BigDecimal.ZERO) > 0;
       if (hasBalance) {
+        if (expectedBalanceAmount.compareTo(BigDecimal.ZERO) <= 0) {
+          throw new RuntimeException("鲜牧定金已覆盖客户订单确认函总金额，无需再上传尾款");
+        }
         if (StringUtils.isBlank(allocation.getXianmuBalanceFilePath()) || allocation.getXianmuBalanceDate() == null
             || balanceAmount.compareTo(BigDecimal.ZERO) <= 0) {
           throw new RuntimeException("已填写尾款时，尾款凭证、日期和金额都必须完整");
         }
         validateUniqueInstallmentFile("xianmu_balance_file_path", allocation.getXianmuBalanceFilePath(), currentPaymentId,
             "该鲜牧尾款凭证已经使用，请勿重复提交");
-        if (balanceAmount.compareTo(allocationAmount) != 0) {
-          throw new RuntimeException("鲜牧尾款金额必须等于客户订单确认函总金额");
+        if (balanceAmount.compareTo(expectedBalanceAmount) != 0) {
+          throw new RuntimeException("鲜牧尾款金额必须等于客户订单确认函总金额减定金金额");
         }
       }
-      if (!hasBalance) {
+      if (expectedBalanceAmount.compareTo(BigDecimal.ZERO) > 0 && !hasBalance) {
         complete = false;
       }
       recognizedTotal = recognizedTotal
