@@ -46,6 +46,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -524,7 +525,9 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
           new QueryWrapper<ErpPresalePackingItemEntity>().eq("packing_id", packing.getId()).orderByAsc("line_no", "id"));
       for (ErpPresalePackingItemEntity packingItem : packingItems) {
         packingItem.setBatchList(erpPresalePackingBatchDao.selectList(
-            new QueryWrapper<ErpPresalePackingBatchEntity>().eq("packing_item_id", packingItem.getId()).orderByAsc("line_no", "id")));
+            new QueryWrapper<ErpPresalePackingBatchEntity>()
+                .eq("packing_item_id", packingItem.getId())
+                .orderByAsc("production_date", "expiry_date", "line_no", "id")));
       }
       packing.setItemList(packingItems);
     }
@@ -801,6 +804,7 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
 
   private void savePackingBatches(ErpPresalePackingItemEntity item, Date now) {
     List<ErpPresalePackingBatchEntity> batchList = item.getBatchList() == null ? new ArrayList<ErpPresalePackingBatchEntity>() : item.getBatchList();
+    sortPackingBatches(batchList);
     int lineNo = 1;
     for (ErpPresalePackingBatchEntity batch : batchList) {
       batch.setPackingItemId(item.getId());
@@ -811,6 +815,40 @@ public class ErpPresaleOrderServiceImpl extends ServiceImpl<ErpPresaleOrderDao, 
       batch.setUpdateTime(now);
       erpPresalePackingBatchDao.insert(batch);
     }
+  }
+
+  private void sortPackingBatches(List<ErpPresalePackingBatchEntity> batchList) {
+    if (batchList == null || batchList.size() <= 1) {
+      return;
+    }
+    Collections.sort(batchList, new Comparator<ErpPresalePackingBatchEntity>() {
+      @Override
+      public int compare(ErpPresalePackingBatchEntity left, ErpPresalePackingBatchEntity right) {
+        int result = compareDate(left == null ? null : left.getProductionDate(), right == null ? null : right.getProductionDate());
+        if (result != 0) {
+          return result;
+        }
+        result = compareDate(left == null ? null : left.getExpiryDate(), right == null ? null : right.getExpiryDate());
+        if (result != 0) {
+          return result;
+        }
+        return Integer.compare(left == null || left.getBoxCount() == null ? 0 : left.getBoxCount(),
+            right == null || right.getBoxCount() == null ? 0 : right.getBoxCount());
+      }
+    });
+  }
+
+  private int compareDate(Date left, Date right) {
+    if (left == null && right == null) {
+      return 0;
+    }
+    if (left == null) {
+      return 1;
+    }
+    if (right == null) {
+      return -1;
+    }
+    return left.compareTo(right);
   }
 
   private void enrichPresaleItem(ErpPresaleOrderItemEntity item) {
